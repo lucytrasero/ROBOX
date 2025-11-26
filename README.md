@@ -1,16 +1,23 @@
 # robox-clearing
 
-A clearing layer for machine-to-machine (robot-to-robot) interactions with micropayments support.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+A powerful clearing layer for machine-to-machine (robot-to-robot) interactions with micropayments, escrow, batch transfers, and event system.
 
 ## Features
 
-- **Robot Account Management** - Create, update, and delete robot accounts with custom metadata
-- **Balance Operations** - Credit and debit operations with authorization controls
-- **Micropayments** - Transfer funds between robots for tasks, energy, parts, or custom payment types
-- **Transaction History** - Full transaction logging with filtering and pagination
-- **Role-Based Authorization** - Built-in roles (consumer, provider, admin) with customizable policies
-- **403 Forbidden Errors** - Proper error handling for unauthorized operations
-- **Pluggable Storage** - Default in-memory storage with support for custom adapters
+- 🤖 **Robot Account Management** - Create, update, freeze, and manage robot accounts
+- 💰 **Balance Operations** - Credit, debit with full audit trail
+- 💸 **Micropayments** - Fast transfers with fee support
+- 🔒 **Escrow** - Conditional payments with expiration
+- 📦 **Batch Transfers** - Process multiple payments at once
+- 📊 **Statistics** - Transaction analytics and reporting
+- 🔐 **Role-Based Authorization** - Consumer, Provider, Admin, Operator, Auditor
+- 📝 **Audit Log** - Complete operation history
+- 🎯 **Event System** - Subscribe to all operations
+- 🔌 **Middleware Support** - Extend functionality
+- ⚡ **Idempotency** - Safe retries with idempotency keys
+- 🚫 **403 Errors** - Proper authorization error handling
 
 ## Installation
 
@@ -21,166 +28,308 @@ npm install robox-clearing
 ## Quick Start
 
 ```typescript
-import { RoboxLayer, InMemoryStorage, RobotRole, TransactionType } from 'robox-clearing';
+import {
+  RoboxLayer,
+  InMemoryStorage,
+  RobotRole,
+  TransactionType,
+  EventType,
+} from 'robox-clearing';
 
-// Initialize the layer
+// Initialize
 const robox = new RoboxLayer({
   storage: new InMemoryStorage(),
+  enableAuditLog: true,
 });
 
-// Create robot accounts
+// Subscribe to events
+robox.on(EventType.TRANSFER_COMPLETED, (event) => {
+  console.log('Transfer completed:', event.data);
+});
+
+// Create accounts
 const worker = await robox.createRobotAccount({
   id: 'worker-001',
   name: 'Worker Bot',
   initialBalance: 1000,
   roles: [RobotRole.CONSUMER],
+  tags: ['production'],
 });
 
 const service = await robox.createRobotAccount({
   id: 'service-001',
-  name: 'Service Bot',
+  name: 'Charging Station',
   roles: [RobotRole.PROVIDER],
 });
 
-// Make a payment
+// Transfer funds
 const tx = await robox.transfer({
   from: 'worker-001',
   to: 'service-001',
   amount: 100,
-  type: TransactionType.TASK_PAYMENT,
-  meta: { taskId: 'task-123' },
+  type: TransactionType.ENERGY_PAYMENT,
+  meta: { kwh: 5 },
 });
 
-console.log(`Transaction ${tx.id} completed`);
+console.log(`Transaction ${tx.id} completed!`);
 ```
 
-## API Reference
-
-### RoboxLayer
-
-Main class for the clearing layer.
+## Account Management
 
 ```typescript
-const robox = new RoboxLayer({
-  storage: StorageAdapter,    // Required: storage adapter
-  auth?: AuthPolicy,          // Optional: custom auth policies
-  logger?: Logger,            // Optional: logging interface
-});
-```
-
-### Account Management
-
-```typescript
-// Create account
+// Create with limits
 const account = await robox.createRobotAccount({
-  id?: string,                // Auto-generated if not provided
-  name?: string,
-  initialBalance?: number,    // Default: 0
-  roles?: string[],           // Default: ['consumer']
-  metadata?: Record<string, any>,
+  id: 'robot-001',
+  name: 'Worker',
+  initialBalance: 1000,
+  roles: [RobotRole.CONSUMER, RobotRole.PROVIDER],
+  limits: {
+    maxTransferAmount: 500,
+    dailyTransferLimit: 2000,
+    minBalance: 100,
+  },
+  tags: ['warehouse-a', 'priority'],
 });
 
-// Get account
-const account = await robox.getRobotAccount(id);
+// List with filters
+const consumers = await robox.listRobotAccounts({
+  role: RobotRole.CONSUMER,
+  tag: 'warehouse-a',
+  minBalance: 500,
+});
 
-// Update account
-const updated = await robox.updateRobotAccount(id, {
-  name?: string,
-  metadata?: Record<string, any>,
-  roles?: string[],           // Requires admin privileges
-}, initiatedBy?);
+// Freeze/unfreeze
+await robox.freezeAccount('robot-001');
+await robox.unfreezeAccount('robot-001');
 
-// Delete account (balance must be 0)
-await robox.deleteRobotAccount(id);
+// Get balance info
+const balance = await robox.getTotalBalance('robot-001');
+// { available: 700, frozen: 300, total: 1000 }
 ```
 
-### Balance Operations
+## Transfers
 
 ```typescript
-// Get balance
-const balance = await robox.getBalance(robotId);
-
-// Credit (add funds)
-const op = await robox.credit(robotId, amount, {
-  reason?: string,
-  meta?: Record<string, any>,
-  initiatedBy?: string,       // Self or admin required
-});
-
-// Debit (remove funds) - Admin only
-const op = await robox.debit(robotId, amount, {
-  reason?: string,
-  meta?: Record<string, any>,
-  initiatedBy: adminId,       // Admin required
-});
-```
-
-### Transfers
-
-```typescript
+// Simple transfer
 const tx = await robox.transfer({
-  from: string,               // Must have 'consumer' role
-  to: string,                 // Must have 'provider' role
-  amount: number,             // Must be > 0
-  type: TransactionType | string,
-  meta?: Record<string, any>,
-  initiatedBy?: string,       // Default: from
+  from: 'buyer',
+  to: 'seller',
+  amount: 100,
+  type: TransactionType.PARTS_PAYMENT,
 });
+
+// With idempotency (safe retries)
+const tx = await robox.transfer({
+  from: 'buyer',
+  to: 'seller',
+  amount: 100,
+  type: TransactionType.TASK_PAYMENT,
+  idempotencyKey: 'order-12345',
+});
+
+// With custom fee
+const tx = await robox.transfer({
+  from: 'buyer',
+  to: 'seller',
+  amount: 100,
+  fee: 2, // Platform fee
+  type: TransactionType.COMPUTE_PAYMENT,
+});
+
+// Refund
+const refund = await robox.refund(tx.id, 'admin');
 ```
 
-Built-in transaction types:
-- `TransactionType.TASK_PAYMENT`
-- `TransactionType.ENERGY_PAYMENT`
-- `TransactionType.PARTS_PAYMENT`
-
-### Transaction History
+### Transaction Types
 
 ```typescript
-// List transactions
-const transactions = await robox.listTransactions({
-  robotId?: string,           // Filter by participant
-  type?: string,              // Filter by type
-  fromDate?: Date,
-  toDate?: Date,
-  limit?: number,
-  offset?: number,
-});
-
-// Get single transaction
-const tx = await robox.getTransaction(id);
+enum TransactionType {
+  TASK_PAYMENT = 'TASK_PAYMENT',
+  ENERGY_PAYMENT = 'ENERGY_PAYMENT',
+  PARTS_PAYMENT = 'PARTS_PAYMENT',
+  DATA_PAYMENT = 'DATA_PAYMENT',
+  COMPUTE_PAYMENT = 'COMPUTE_PAYMENT',
+  STORAGE_PAYMENT = 'STORAGE_PAYMENT',
+  BANDWIDTH_PAYMENT = 'BANDWIDTH_PAYMENT',
+  LICENSE_PAYMENT = 'LICENSE_PAYMENT',
+  SUBSCRIPTION = 'SUBSCRIPTION',
+  REFUND = 'REFUND',
+  FEE = 'FEE',
+  REWARD = 'REWARD',
+  PENALTY = 'PENALTY',
+}
 ```
 
-## Roles and Authorization
+## Escrow
 
-### Built-in Roles
+```typescript
+// Create escrow (funds are frozen)
+const escrow = await robox.createEscrow({
+  from: 'buyer',
+  to: 'seller',
+  amount: 500,
+  condition: 'delivery_confirmed',
+  expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+});
 
-| Role | Permissions |
-|------|-------------|
-| `consumer` | Can initiate transfers (as sender) |
-| `provider` | Can receive transfers |
-| `admin` | Can credit/debit any account, change roles, initiate any transfer |
+// Release escrow (transfer funds to seller)
+const tx = await robox.releaseEscrow(escrow.id);
 
-### Custom Authorization
+// Or refund (return funds to buyer)
+await robox.refundEscrow(escrow.id);
+
+// List escrows
+const pending = await robox.listEscrows({
+  robotId: 'buyer',
+  status: EscrowStatus.PENDING,
+});
+```
+
+## Batch Transfers
+
+```typescript
+// Process multiple transfers at once
+const batch = await robox.batchTransfer({
+  transfers: [
+    { from: 'payer', to: 'worker-1', amount: 100, type: TransactionType.REWARD },
+    { from: 'payer', to: 'worker-2', amount: 150, type: TransactionType.REWARD },
+    { from: 'payer', to: 'worker-3', amount: 200, type: TransactionType.REWARD },
+  ],
+  stopOnError: false, // Continue on failures
+});
+
+console.log(`Success: ${batch.successCount}, Failed: ${batch.failedCount}`);
+// batch.status: 'COMPLETED' | 'PARTIAL' | 'FAILED'
+```
+
+## Events
+
+```typescript
+import { EventType } from 'robox-clearing';
+
+// Subscribe to specific events
+robox.on(EventType.TRANSFER_COMPLETED, (event) => {
+  console.log('Transfer:', event.data);
+});
+
+robox.on(EventType.ESCROW_CREATED, (event) => {
+  console.log('Escrow created:', event.data);
+});
+
+// Subscribe to all events
+robox.on('*', (event) => {
+  console.log(`[${event.type}]`, event.data);
+});
+
+// Unsubscribe
+const unsubscribe = robox.on(EventType.ACCOUNT_CREATED, handler);
+unsubscribe();
+```
+
+### Available Events
+
+| Event | Description |
+|-------|-------------|
+| `account.created` | New account created |
+| `account.updated` | Account updated |
+| `account.deleted` | Account deleted |
+| `account.frozen` | Account frozen |
+| `account.unfrozen` | Account unfrozen |
+| `balance.credited` | Balance credited |
+| `balance.debited` | Balance debited |
+| `transfer.initiated` | Transfer started |
+| `transfer.completed` | Transfer succeeded |
+| `transfer.failed` | Transfer failed |
+| `escrow.created` | Escrow created |
+| `escrow.released` | Escrow released |
+| `escrow.refunded` | Escrow refunded |
+| `batch.started` | Batch processing started |
+| `batch.completed` | Batch processing finished |
+
+## Fee Calculator
 
 ```typescript
 const robox = new RoboxLayer({
   storage: new InMemoryStorage(),
+  feeCalculator: {
+    calculate: (amount, type, from, to) => {
+      // 1% fee for all transfers
+      return Math.floor(amount * 0.01);
+    },
+  },
+});
+```
+
+## Middleware
+
+```typescript
+import { loggingMiddleware, rateLimitMiddleware } from 'robox-clearing';
+
+// Add logging
+robox.use(loggingMiddleware({
+  info: console.log,
+  warn: console.warn,
+  error: console.error,
+}));
+
+// Add rate limiting
+robox.use(rateLimitMiddleware(100, 60000)); // 100 requests per minute
+
+// Custom middleware
+robox.use(async (ctx, next) => {
+  console.log(`Action: ${ctx.action}`);
+  await next();
+  console.log('Done');
+});
+```
+
+## Statistics
+
+```typescript
+const stats = await robox.getStatistics();
+
+// {
+//   totalAccounts: 150,
+//   activeAccounts: 142,
+//   totalTransactions: 10523,
+//   totalVolume: 1250000,
+//   totalFees: 12500,
+//   averageTransactionAmount: 118.78,
+//   transactionsByType: {
+//     TASK_PAYMENT: 5000,
+//     ENERGY_PAYMENT: 3000,
+//     PARTS_PAYMENT: 2523
+//   }
+// }
+
+// With date range
+const monthlyStats = await robox.getStatistics(
+  new Date('2024-01-01'),
+  new Date('2024-01-31')
+);
+```
+
+## Roles & Authorization
+
+| Role | Permissions |
+|------|-------------|
+| `consumer` | Can send payments |
+| `provider` | Can receive payments |
+| `operator` | Can transfer, credit, manage escrow |
+| `auditor` | Can view audit logs |
+| `admin` | Full access |
+
+```typescript
+// Custom auth policy
+const robox = new RoboxLayer({
+  storage: new InMemoryStorage(),
   auth: {
     canTransfer: async (ctx) => {
-      // Custom transfer logic
-      return ctx.amount <= 1000; // Max transfer limit
-    },
-    canChangeRoles: async (ctx) => {
-      // Custom role change logic
-      return ctx.initiator?.roles.includes('superadmin');
-    },
-    canCredit: async (ctx) => {
-      // Custom credit logic
+      // Custom logic
+      if (ctx.amount > 10000) {
+        return ctx.initiator?.roles.includes('admin');
+      }
       return true;
-    },
-    canDebit: async (ctx) => {
-      // Custom debit logic
-      return ctx.initiator?.roles.includes('admin');
     },
   },
 });
@@ -188,108 +337,66 @@ const robox = new RoboxLayer({
 
 ## Error Handling
 
-All errors extend `RoboxError` with a `code` property for HTTP mapping:
-
 ```typescript
 import {
-  RoboxError,              // Base error
-  RoboxForbiddenError,     // 403 - Authorization failed
-  RoboxNotFoundError,      // 404 - Resource not found
-  RoboxValidationError,    // 400 - Invalid input
-  RoboxInsufficientFundsError, // 402 - Not enough balance
+  RoboxForbiddenError,      // 403
+  RoboxNotFoundError,        // 404
+  RoboxValidationError,      // 400
+  RoboxInsufficientFundsError, // 402
+  RoboxAccountFrozenError,   // 403
+  RoboxLimitExceededError,   // 429
+  RoboxEscrowError,          // 400
+  RoboxIdempotencyError,     // 409
 } from 'robox-clearing';
 
 try {
   await robox.transfer({ ... });
 } catch (error) {
   if (error instanceof RoboxForbiddenError) {
-    console.error(`Forbidden (${error.code}): ${error.reason}`);
-    // error.reason: 'INSUFFICIENT_ROLE', etc.
+    // HTTP 403
+    console.error(`Forbidden: ${error.reason}`);
   }
+  
+  if (error instanceof RoboxInsufficientFundsError) {
+    // HTTP 402
+    console.error(`Need ${error.required}, have ${error.available}`);
+  }
+  
+  // All errors have toJSON()
+  res.status(error.code).json(error.toJSON());
 }
 ```
 
-## Custom Storage Adapter
-
-Implement the `StorageAdapter` interface:
+## Custom Storage
 
 ```typescript
-import { StorageAdapter, RobotAccount, Transaction } from 'robox-clearing';
+import { StorageAdapter } from 'robox-clearing';
 
 class PostgresStorage implements StorageAdapter {
-  async createAccount(account: RobotAccount): Promise<RobotAccount> {
-    // Your implementation
-  }
-  
-  async getAccount(id: string): Promise<RobotAccount | null> {
-    // Your implementation
-  }
-  
+  async createAccount(account) { /* ... */ }
+  async getAccount(id) { /* ... */ }
   // ... implement all methods
 }
-```
 
-## Logging
-
-```typescript
 const robox = new RoboxLayer({
-  storage: new InMemoryStorage(),
-  logger: {
-    info: (msg, meta) => console.log(msg, meta),
-    warn: (msg, meta) => console.warn(msg, meta),
-    error: (msg, meta) => console.error(msg, meta),
-  },
+  storage: new PostgresStorage(),
 });
 ```
 
-## Use Cases
+## TypeScript
 
-### Task Payment
-
-```typescript
-// Robot A pays Robot B for completing a task
-await robox.transfer({
-  from: 'robot-a',
-  to: 'robot-b',
-  amount: 50,
-  type: TransactionType.TASK_PAYMENT,
-  meta: {
-    taskId: 'compute-job-123',
-    duration: 3600,
-  },
-});
-```
-
-### Energy Payment
+Full TypeScript support with exported types:
 
 ```typescript
-// Robot A pays charging station for energy
-await robox.transfer({
-  from: 'robot-a',
-  to: 'charging-station-1',
-  amount: 200,
-  type: TransactionType.ENERGY_PAYMENT,
-  meta: {
-    kwh: 10,
-    duration: 1800,
-  },
-});
-```
-
-### Parts Payment
-
-```typescript
-// Robot A buys a part from Robot B
-await robox.transfer({
-  from: 'robot-a',
-  to: 'robot-b',
-  amount: 500,
-  type: TransactionType.PARTS_PAYMENT,
-  meta: {
-    partId: 'servo-motor-x1',
-    quantity: 1,
-  },
-});
+import type {
+  RobotAccount,
+  Transaction,
+  Escrow,
+  BatchTransfer,
+  Statistics,
+  TransferOptions,
+  StorageAdapter,
+} from 'robox-clearing';
 ```
 
 ## License

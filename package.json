@@ -1,7 +1,7 @@
 {
   "name": "robox-clearing",
   "version": "1.0.0",
-  "description": "Clearing layer for machine-to-machine (robot-to-robot) interactions with micropayments support",
+  "description": "Clearing layer for machine-to-machine (robot-to-robot) interactions with micropayments, escrow, batch transfers and event system",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -15,7 +15,8 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts --clean",
@@ -25,8 +26,9 @@
     "test:coverage": "jest --coverage",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
-    "prepublishOnly": "npm run build",
-    "typecheck": "tsc --noEmit"
+    "prepublishOnly": "npm run build && npm test",
+    "typecheck": "tsc --noEmit",
+    "example": "npx ts-node examples/basic.ts"
   },
   "keywords": [
     "robot",
@@ -36,7 +38,12 @@
     "m2m",
     "balance",
     "transactions",
-    "iot"
+    "iot",
+    "escrow",
+    "batch-transfers",
+    "robot-payments",
+    "automation",
+    "fintech"
   ],
   "author": "",
   "license": "MIT",
