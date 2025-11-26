@@ -117,3 +117,55 @@ export type {
   UpdateWebhookOptions,
   WebhookDeliveryFilter,
 } from './webhooks';
+
+// Scheduler
+export { Scheduler, ScheduleType, ScheduledPaymentStatus } from './scheduler';
+
+export type {
+  SchedulerConfig,
+  TransferExecutor,
+  ScheduledPayment,
+  ScheduleConfig,
+  CreateScheduledPaymentOptions,
+  UpdateScheduledPaymentOptions,
+  ScheduledPaymentFilter,
+  ExecutionResult,
+} from './scheduler';
+
+// Reputation
+export { ReputationManager, ReputationLevel, ReputationEventType } from './reputation';
+
+export type {
+  RobotReputation,
+  RobotRating,
+  ReputationEvent,
+  CreateRatingOptions,
+  ReputationFilter,
+} from './reputation';
+
+// Discovery
+export { DiscoveryManager, ServiceType } from './discovery';
+
+export type {
+  RobotLocation,
+  RobotService,
+  ServiceSearchResult,
+  ServiceSearchOptions,
+  RegisterServiceOptions,
+  UpdateLocationOptions,
+} from './discovery';
+
+// Subscriptions
+export {
+  SubscriptionManager,
+  SubscriptionStatus,
+  BillingPeriod,
+} from './subscriptions';
+
+export type {
+  SubscriptionPlan,
+  Subscription,
+  CreatePlanOptions,
+  SubscribeOptions,
+  SubscriptionTransferExecutor,
+} from './subscriptions';
