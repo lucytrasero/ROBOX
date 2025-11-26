@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A powerful clearing layer for machine-to-machine (robot-to-robot) interactions with micropayments, escrow, batch transfers, and event system.
+A powerful clearing layer for machine-to-machine (robot-to-robot) interactions with micropayments, escrow, batch transfers, webhooks, and event system.
 
 ## Features
 
@@ -11,6 +11,7 @@ A powerful clearing layer for machine-to-machine (robot-to-robot) interactions w
 - 💸 **Micropayments** - Fast transfers with fee support
 - 🔒 **Escrow** - Conditional payments with expiration
 - 📦 **Batch Transfers** - Process multiple payments at once
+- 🪝 **Webhooks** - HTTP callbacks for external integrations
 - 📊 **Statistics** - Transaction analytics and reporting
 - 🔐 **Role-Based Authorization** - Consumer, Provider, Admin, Operator, Auditor
 - 📝 **Audit Log** - Complete operation history
@@ -200,6 +201,116 @@ const batch = await robox.batchTransfer({
 
 console.log(`Success: ${batch.successCount}, Failed: ${batch.failedCount}`);
 // batch.status: 'COMPLETED' | 'PARTIAL' | 'FAILED'
+```
+
+## Webhooks
+
+Send HTTP callbacks to external services when events occur.
+
+```typescript
+import { WebhookManager, EventType } from 'robox-clearing';
+
+const webhooks = new WebhookManager();
+
+// Register a webhook
+const hook = webhooks.create({
+  url: 'https://your-server.com/webhook',
+  events: [EventType.TRANSFER_COMPLETED, EventType.ESCROW_RELEASED],
+  secret: 'your-secret-key',  // For signature verification
+  retryAttempts: 3,
+  timeoutMs: 10000,
+});
+
+// Register webhook for all events
+const allEventsHook = webhooks.create({
+  url: 'https://your-server.com/all-events',
+  events: ['*'],
+  secret: 'another-secret',
+});
+
+// Dispatch event to all matching webhooks
+await webhooks.dispatch({
+  type: EventType.TRANSFER_COMPLETED,
+  data: { from: 'robot-1', to: 'robot-2', amount: 100 },
+  timestamp: new Date(),
+});
+
+// Manage webhooks
+webhooks.disable(hook.id);
+webhooks.enable(hook.id);
+webhooks.delete(hook.id);
+
+// List all webhooks
+const allHooks = webhooks.list();
+
+// Get delivery history
+const deliveries = webhooks.listDeliveries({
+  webhookId: hook.id,
+  status: WebhookDeliveryStatus.FAILED,
+});
+
+// Retry failed delivery
+await webhooks.retryDelivery(deliveryId);
+
+// Get statistics
+const stats = webhooks.getStats();
+// { totalWebhooks: 2, activeWebhooks: 1, totalDeliveries: 50, ... }
+```
+
+### Webhook Payload
+
+Your endpoint will receive POST requests with this payload:
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "event": "transfer.completed",
+  "data": {
+    "id": "tx-123",
+    "from": "robot-1",
+    "to": "robot-2",
+    "amount": 100,
+    "type": "TASK_PAYMENT"
+  },
+  "timestamp": "2025-11-26T12:00:00.000Z",
+  "signature": "a1c3b2f1e4d5..."
+}
+```
+
+### Webhook Headers
+
+```
+Content-Type: application/json
+User-Agent: RoboxClearing/1.0
+X-Webhook-ID: hook-id
+X-Delivery-ID: delivery-id
+X-Event-Type: transfer.completed
+X-Signature: hmac-sha256-signature
+```
+
+### Verify Webhook Signature
+
+```typescript
+import { WebhookManager } from 'robox-clearing';
+
+// On your server receiving webhooks
+app.post('/webhook', (req, res) => {
+  const signature = req.headers['x-signature'];
+  const payload = JSON.stringify(req.body);
+  const secret = 'your-secret-key';
+
+  const isValid = WebhookManager.verifySignature(payload, signature, secret);
+  
+  if (!isValid) {
+    return res.status(401).send('Invalid signature');
+  }
+
+  // Process webhook
+  console.log('Event:', req.body.event);
+  console.log('Data:', req.body.data);
+  
+  res.status(200).send('OK');
+});
 ```
 
 ## Events
@@ -396,6 +507,8 @@ import type {
   Statistics,
   TransferOptions,
   StorageAdapter,
+  WebhookConfig,
+  WebhookDelivery,
 } from 'robox-clearing';
 ```
 
