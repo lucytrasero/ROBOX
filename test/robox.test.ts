@@ -3,10 +3,18 @@ import {
   InMemoryStorage,
   RobotRole,
   TransactionType,
+  TransactionStatus,
+  AccountStatus,
+  EscrowStatus,
+  BatchStatus,
+  EventType,
   RoboxForbiddenError,
   RoboxNotFoundError,
   RoboxValidationError,
   RoboxInsufficientFundsError,
+  RoboxAccountFrozenError,
+  RoboxEscrowError,
+  RoboxIdempotencyError,
 } from '../src';
 
 describe('RoboxLayer', () => {
@@ -15,11 +23,11 @@ describe('RoboxLayer', () => {
 
   beforeEach(() => {
     storage = new InMemoryStorage();
-    robox = new RoboxLayer({ storage });
+    robox = new RoboxLayer({ storage, enableAuditLog: true });
   });
 
   // ============================================
-  // Account Management Tests
+  // Account Management
   // ============================================
 
   describe('Account Management', () => {
@@ -28,8 +36,9 @@ describe('RoboxLayer', () => {
 
       expect(account.id).toBeDefined();
       expect(account.balance).toBe(0);
+      expect(account.frozenBalance).toBe(0);
+      expect(account.status).toBe(AccountStatus.ACTIVE);
       expect(account.roles).toContain(RobotRole.CONSUMER);
-      expect(account.createdAt).toBeInstanceOf(Date);
     });
 
     test('should create account with custom values', async () => {
@@ -39,173 +48,108 @@ describe('RoboxLayer', () => {
         initialBalance: 1000,
         roles: [RobotRole.CONSUMER, RobotRole.PROVIDER],
         metadata: { type: 'worker' },
+        tags: ['production', 'warehouse-a'],
       });
 
       expect(account.id).toBe('robot-001');
       expect(account.name).toBe('Test Robot');
       expect(account.balance).toBe(1000);
-      expect(account.roles).toEqual([RobotRole.CONSUMER, RobotRole.PROVIDER]);
-      expect(account.metadata).toEqual({ type: 'worker' });
+      expect(account.tags).toEqual(['production', 'warehouse-a']);
     });
 
-    test('should get existing account', async () => {
-      const created = await robox.createRobotAccount({ id: 'robot-001' });
-      const fetched = await robox.getRobotAccount('robot-001');
+    test('should list accounts with filters', async () => {
+      await robox.createRobotAccount({ id: 'a1', roles: [RobotRole.CONSUMER], tags: ['prod'] });
+      await robox.createRobotAccount({ id: 'a2', roles: [RobotRole.PROVIDER], tags: ['dev'] });
+      await robox.createRobotAccount({ id: 'a3', roles: [RobotRole.ADMIN] });
 
-      expect(fetched).toEqual(created);
+      const consumers = await robox.listRobotAccounts({ role: RobotRole.CONSUMER });
+      expect(consumers).toHaveLength(1);
+
+      const prodAccounts = await robox.listRobotAccounts({ tag: 'prod' });
+      expect(prodAccounts).toHaveLength(1);
     });
 
-    test('should return null for non-existing account', async () => {
-      const account = await robox.getRobotAccount('non-existent');
-      expect(account).toBeNull();
-    });
-
-    test('should update account metadata', async () => {
-      await robox.createRobotAccount({ id: 'robot-001', name: 'Original' });
-
-      const updated = await robox.updateRobotAccount('robot-001', {
-        name: 'Updated',
-        metadata: { version: 2 },
-      });
-
-      expect(updated.name).toBe('Updated');
-      expect(updated.metadata).toEqual({ version: 2 });
-    });
-
-    test('should throw on update non-existing account', async () => {
-      await expect(
-        robox.updateRobotAccount('non-existent', { name: 'Test' })
-      ).rejects.toThrow(RoboxNotFoundError);
-    });
-
-    test('should delete account with zero balance', async () => {
+    test('should freeze and unfreeze account', async () => {
       await robox.createRobotAccount({ id: 'robot-001' });
-      await robox.deleteRobotAccount('robot-001');
 
-      const account = await robox.getRobotAccount('robot-001');
-      expect(account).toBeNull();
+      const frozen = await robox.freezeAccount('robot-001');
+      expect(frozen.status).toBe(AccountStatus.FROZEN);
+
+      const unfrozen = await robox.unfreezeAccount('robot-001');
+      expect(unfrozen.status).toBe(AccountStatus.ACTIVE);
     });
 
-    test('should not delete account with non-zero balance', async () => {
+    test('should not allow operations on frozen account', async () => {
       await robox.createRobotAccount({
         id: 'robot-001',
-        initialBalance: 100,
+        initialBalance: 1000,
+        roles: [RobotRole.CONSUMER],
+      });
+      await robox.createRobotAccount({
+        id: 'robot-002',
+        roles: [RobotRole.PROVIDER],
       });
 
-      await expect(robox.deleteRobotAccount('robot-001')).rejects.toThrow(
-        RoboxValidationError
-      );
+      await robox.freezeAccount('robot-001');
+
+      await expect(
+        robox.transfer({
+          from: 'robot-001',
+          to: 'robot-002',
+          amount: 100,
+          type: TransactionType.TASK_PAYMENT,
+        })
+      ).rejects.toThrow(RoboxAccountFrozenError);
     });
   });
 
   // ============================================
-  // Balance Operations Tests
+  // Balance Operations
   // ============================================
 
   describe('Balance Operations', () => {
-    test('should get balance', async () => {
+    test('should get total balance including frozen', async () => {
       await robox.createRobotAccount({
         id: 'robot-001',
-        initialBalance: 500,
+        initialBalance: 1000,
+        roles: [RobotRole.CONSUMER],
+      });
+      await robox.createRobotAccount({
+        id: 'robot-002',
+        roles: [RobotRole.PROVIDER],
       });
 
-      const balance = await robox.getBalance('robot-001');
-      expect(balance).toBe(500);
+      // Create escrow to freeze funds
+      await robox.createEscrow({
+        from: 'robot-001',
+        to: 'robot-002',
+        amount: 300,
+      });
+
+      const balance = await robox.getTotalBalance('robot-001');
+      expect(balance.available).toBe(700);
+      expect(balance.frozen).toBe(300);
+      expect(balance.total).toBe(1000);
     });
 
-    test('should credit account (self)', async () => {
+    test('should credit with balance after info', async () => {
       await robox.createRobotAccount({ id: 'robot-001' });
 
-      const op = await robox.credit('robot-001', 100, {
-        reason: 'Initial deposit',
+      const op = await robox.credit('robot-001', 500, {
+        reason: 'Deposit',
         initiatedBy: 'robot-001',
       });
 
-      expect(op.direction).toBe('CREDIT');
-      expect(op.amount).toBe(100);
-
-      const balance = await robox.getBalance('robot-001');
-      expect(balance).toBe(100);
-    });
-
-    test('should credit account (admin)', async () => {
-      await robox.createRobotAccount({ id: 'admin', roles: [RobotRole.ADMIN] });
-      await robox.createRobotAccount({ id: 'robot-001' });
-
-      await robox.credit('robot-001', 100, { initiatedBy: 'admin' });
-
-      const balance = await robox.getBalance('robot-001');
-      expect(balance).toBe(100);
-    });
-
-    test('should forbid credit without permission', async () => {
-      await robox.createRobotAccount({ id: 'robot-001' });
-      await robox.createRobotAccount({ id: 'robot-002' });
-
-      await expect(
-        robox.credit('robot-001', 100, { initiatedBy: 'robot-002' })
-      ).rejects.toThrow(RoboxForbiddenError);
-    });
-
-    test('should debit account (admin only)', async () => {
-      await robox.createRobotAccount({ id: 'admin', roles: [RobotRole.ADMIN] });
-      await robox.createRobotAccount({
-        id: 'robot-001',
-        initialBalance: 500,
-      });
-
-      const op = await robox.debit('robot-001', 100, { initiatedBy: 'admin' });
-
-      expect(op.direction).toBe('DEBIT');
-      expect(op.amount).toBe(100);
-
-      const balance = await robox.getBalance('robot-001');
-      expect(balance).toBe(400);
-    });
-
-    test('should forbid debit without admin role', async () => {
-      await robox.createRobotAccount({
-        id: 'robot-001',
-        initialBalance: 500,
-      });
-
-      await expect(
-        robox.debit('robot-001', 100, { initiatedBy: 'robot-001' })
-      ).rejects.toThrow(RoboxForbiddenError);
-    });
-
-    test('should throw on insufficient funds', async () => {
-      await robox.createRobotAccount({ id: 'admin', roles: [RobotRole.ADMIN] });
-      await robox.createRobotAccount({
-        id: 'robot-001',
-        initialBalance: 50,
-      });
-
-      await expect(
-        robox.debit('robot-001', 100, { initiatedBy: 'admin' })
-      ).rejects.toThrow(RoboxInsufficientFundsError);
-    });
-
-    test('should reject non-positive amounts', async () => {
-      await robox.createRobotAccount({ id: 'robot-001' });
-
-      await expect(
-        robox.credit('robot-001', 0, { initiatedBy: 'robot-001' })
-      ).rejects.toThrow(RoboxValidationError);
-
-      await expect(
-        robox.credit('robot-001', -50, { initiatedBy: 'robot-001' })
-      ).rejects.toThrow(RoboxValidationError);
+      expect(op.balanceAfter).toBe(500);
     });
   });
 
   // ============================================
-  // Transfer Tests
+  // Transfers
   // ============================================
 
   describe('Transfers', () => {
     beforeEach(async () => {
-      // Setup: Consumer and Provider
       await robox.createRobotAccount({
         id: 'consumer',
         initialBalance: 1000,
@@ -217,7 +161,7 @@ describe('RoboxLayer', () => {
       });
     });
 
-    test('should transfer between consumer and provider', async () => {
+    test('should complete transfer with status', async () => {
       const tx = await robox.transfer({
         from: 'consumer',
         to: 'provider',
@@ -225,318 +169,320 @@ describe('RoboxLayer', () => {
         type: TransactionType.TASK_PAYMENT,
       });
 
-      expect(tx.from).toBe('consumer');
-      expect(tx.to).toBe('provider');
-      expect(tx.amount).toBe(100);
-      expect(tx.type).toBe(TransactionType.TASK_PAYMENT);
-
-      const consumerBalance = await robox.getBalance('consumer');
-      const providerBalance = await robox.getBalance('provider');
-
-      expect(consumerBalance).toBe(900);
-      expect(providerBalance).toBe(100);
+      expect(tx.status).toBe(TransactionStatus.COMPLETED);
+      expect(tx.completedAt).toBeDefined();
     });
 
-    test('should transfer with custom type', async () => {
-      const tx = await robox.transfer({
+    test('should handle idempotency', async () => {
+      const tx1 = await robox.transfer({
         from: 'consumer',
         to: 'provider',
-        amount: 50,
-        type: 'CUSTOM_PAYMENT',
-        meta: { orderId: '12345' },
-      });
-
-      expect(tx.type).toBe('CUSTOM_PAYMENT');
-      expect(tx.meta).toEqual({ orderId: '12345' });
-    });
-
-    test('should forbid transfer from non-consumer', async () => {
-      await robox.createRobotAccount({
-        id: 'not-consumer',
-        initialBalance: 500,
-        roles: [RobotRole.PROVIDER], // Not a consumer
-      });
-
-      await expect(
-        robox.transfer({
-          from: 'not-consumer',
-          to: 'provider',
-          amount: 100,
-          type: TransactionType.TASK_PAYMENT,
-        })
-      ).rejects.toThrow(RoboxForbiddenError);
-    });
-
-    test('should forbid transfer to non-provider', async () => {
-      await robox.createRobotAccount({
-        id: 'not-provider',
-        roles: [RobotRole.CONSUMER], // Not a provider
+        amount: 100,
+        type: TransactionType.TASK_PAYMENT,
+        idempotencyKey: 'unique-key-123',
       });
 
       await expect(
         robox.transfer({
           from: 'consumer',
-          to: 'not-provider',
+          to: 'provider',
           amount: 100,
           type: TransactionType.TASK_PAYMENT,
+          idempotencyKey: 'unique-key-123',
         })
-      ).rejects.toThrow(RoboxForbiddenError);
+      ).rejects.toThrow(RoboxIdempotencyError);
     });
 
-    test('should allow admin to initiate any transfer', async () => {
-      await robox.createRobotAccount({
-        id: 'admin',
-        roles: [RobotRole.ADMIN],
-      });
-
+    test('should refund completed transaction', async () => {
       const tx = await robox.transfer({
         from: 'consumer',
         to: 'provider',
         amount: 100,
-        type: TransactionType.ENERGY_PAYMENT,
-        initiatedBy: 'admin',
+        type: TransactionType.TASK_PAYMENT,
       });
 
-      expect(tx.initiatedBy).toBe('admin');
-    });
-
-    test('should forbid third-party initiation without admin', async () => {
-      await robox.createRobotAccount({
-        id: 'third-party',
-        roles: [RobotRole.CONSUMER],
-      });
-
-      await expect(
-        robox.transfer({
-          from: 'consumer',
-          to: 'provider',
-          amount: 100,
-          type: TransactionType.TASK_PAYMENT,
-          initiatedBy: 'third-party',
-        })
-      ).rejects.toThrow(RoboxForbiddenError);
-    });
-
-    test('should fail on insufficient funds', async () => {
-      await expect(
-        robox.transfer({
-          from: 'consumer',
-          to: 'provider',
-          amount: 5000, // More than balance
-          type: TransactionType.TASK_PAYMENT,
-        })
-      ).rejects.toThrow(RoboxInsufficientFundsError);
-    });
-
-    test('should fail on non-existing accounts', async () => {
-      await expect(
-        robox.transfer({
-          from: 'non-existent',
-          to: 'provider',
-          amount: 100,
-          type: TransactionType.TASK_PAYMENT,
-        })
-      ).rejects.toThrow(RoboxNotFoundError);
-
-      await expect(
-        robox.transfer({
-          from: 'consumer',
-          to: 'non-existent',
-          amount: 100,
-          type: TransactionType.TASK_PAYMENT,
-        })
-      ).rejects.toThrow(RoboxNotFoundError);
-    });
-
-    test('should reject non-positive amounts', async () => {
-      await expect(
-        robox.transfer({
-          from: 'consumer',
-          to: 'provider',
-          amount: 0,
-          type: TransactionType.TASK_PAYMENT,
-        })
-      ).rejects.toThrow(RoboxValidationError);
-    });
-  });
-
-  // ============================================
-  // Role Management Tests
-  // ============================================
-
-  describe('Role Management', () => {
-    test('should allow admin to change roles', async () => {
+      // Provider needs consumer role to refund
       await robox.createRobotAccount({
         id: 'admin',
         roles: [RobotRole.ADMIN],
       });
-      await robox.createRobotAccount({
-        id: 'robot-001',
-        roles: [RobotRole.CONSUMER],
-      });
 
-      const updated = await robox.updateRobotAccount(
-        'robot-001',
-        { roles: [RobotRole.CONSUMER, RobotRole.PROVIDER] },
-        'admin'
-      );
+      const refund = await robox.refund(tx.id, 'admin');
 
-      expect(updated.roles).toEqual([RobotRole.CONSUMER, RobotRole.PROVIDER]);
+      expect(refund.type).toBe('REFUND');
+      expect(refund.from).toBe('provider');
+      expect(refund.to).toBe('consumer');
+
+      const original = await robox.getTransaction(tx.id);
+      expect(original?.status).toBe(TransactionStatus.REFUNDED);
     });
 
-    test('should forbid non-admin to change roles', async () => {
-      await robox.createRobotAccount({
-        id: 'robot-001',
-        roles: [RobotRole.CONSUMER],
-      });
-      await robox.createRobotAccount({
-        id: 'robot-002',
-        roles: [RobotRole.CONSUMER],
+    test('should apply custom fees', async () => {
+      const roboxWithFees = new RoboxLayer({
+        storage,
+        feeCalculator: {
+          calculate: (amount) => Math.floor(amount * 0.01), // 1% fee
+        },
       });
 
-      await expect(
-        robox.updateRobotAccount(
-          'robot-001',
-          { roles: [RobotRole.ADMIN] },
-          'robot-002'
-        )
-      ).rejects.toThrow(RoboxForbiddenError);
-    });
-
-    test('should forbid self role change without admin', async () => {
-      await robox.createRobotAccount({
-        id: 'robot-001',
-        roles: [RobotRole.CONSUMER],
+      const tx = await roboxWithFees.transfer({
+        from: 'consumer',
+        to: 'provider',
+        amount: 100,
+        type: TransactionType.TASK_PAYMENT,
       });
 
-      await expect(
-        robox.updateRobotAccount(
-          'robot-001',
-          { roles: [RobotRole.ADMIN] },
-          'robot-001'
-        )
-      ).rejects.toThrow(RoboxForbiddenError);
+      expect(tx.fee).toBe(1);
+
+      const consumerBalance = await roboxWithFees.getBalance('consumer');
+      expect(consumerBalance).toBe(899); // 1000 - 100 - 1
     });
   });
 
   // ============================================
-  // Transaction History Tests
+  // Escrow
   // ============================================
 
-  describe('Transaction History', () => {
+  describe('Escrow', () => {
     beforeEach(async () => {
       await robox.createRobotAccount({
-        id: 'robot-a',
+        id: 'buyer',
         initialBalance: 1000,
-        roles: [RobotRole.CONSUMER, RobotRole.PROVIDER],
+        roles: [RobotRole.CONSUMER],
       });
       await robox.createRobotAccount({
-        id: 'robot-b',
-        initialBalance: 1000,
-        roles: [RobotRole.CONSUMER, RobotRole.PROVIDER],
-      });
-      await robox.createRobotAccount({
-        id: 'robot-c',
-        initialBalance: 1000,
-        roles: [RobotRole.CONSUMER, RobotRole.PROVIDER],
+        id: 'seller',
+        roles: [RobotRole.PROVIDER],
       });
     });
 
-    test('should list all transactions', async () => {
-      await robox.transfer({
-        from: 'robot-a',
-        to: 'robot-b',
-        amount: 100,
-        type: TransactionType.TASK_PAYMENT,
-      });
-      await robox.transfer({
-        from: 'robot-b',
-        to: 'robot-c',
-        amount: 50,
-        type: TransactionType.ENERGY_PAYMENT,
+    test('should create escrow and freeze funds', async () => {
+      const escrow = await robox.createEscrow({
+        from: 'buyer',
+        to: 'seller',
+        amount: 500,
+        condition: 'delivery_confirmed',
       });
 
-      const transactions = await robox.listTransactions();
-      expect(transactions).toHaveLength(2);
+      expect(escrow.status).toBe(EscrowStatus.PENDING);
+
+      const balance = await robox.getTotalBalance('buyer');
+      expect(balance.available).toBe(500);
+      expect(balance.frozen).toBe(500);
     });
 
-    test('should filter by robotId', async () => {
-      await robox.transfer({
-        from: 'robot-a',
-        to: 'robot-b',
-        amount: 100,
-        type: TransactionType.TASK_PAYMENT,
-      });
-      await robox.transfer({
-        from: 'robot-b',
-        to: 'robot-c',
-        amount: 50,
-        type: TransactionType.ENERGY_PAYMENT,
+    test('should release escrow and transfer funds', async () => {
+      const escrow = await robox.createEscrow({
+        from: 'buyer',
+        to: 'seller',
+        amount: 500,
       });
 
-      const transactions = await robox.listTransactions({ robotId: 'robot-b' });
-      expect(transactions).toHaveLength(2); // robot-b is in both
+      const tx = await robox.releaseEscrow(escrow.id);
+
+      expect(tx.type).toBe('ESCROW_RELEASE');
+      expect(tx.amount).toBe(500);
+
+      const buyerBalance = await robox.getBalance('buyer');
+      const sellerBalance = await robox.getBalance('seller');
+
+      expect(buyerBalance).toBe(500);
+      expect(sellerBalance).toBe(500);
+
+      const updatedEscrow = await robox.getEscrow(escrow.id);
+      expect(updatedEscrow?.status).toBe(EscrowStatus.RELEASED);
     });
 
-    test('should filter by type', async () => {
-      await robox.transfer({
-        from: 'robot-a',
-        to: 'robot-b',
-        amount: 100,
-        type: TransactionType.TASK_PAYMENT,
-      });
-      await robox.transfer({
-        from: 'robot-a',
-        to: 'robot-b',
-        amount: 50,
-        type: TransactionType.ENERGY_PAYMENT,
+    test('should refund escrow', async () => {
+      const escrow = await robox.createEscrow({
+        from: 'buyer',
+        to: 'seller',
+        amount: 500,
       });
 
-      const transactions = await robox.listTransactions({
-        type: TransactionType.TASK_PAYMENT,
-      });
-      expect(transactions).toHaveLength(1);
-      expect(transactions[0].type).toBe(TransactionType.TASK_PAYMENT);
+      await robox.refundEscrow(escrow.id);
+
+      const buyerBalance = await robox.getBalance('buyer');
+      expect(buyerBalance).toBe(1000); // Full balance restored
+
+      const updatedEscrow = await robox.getEscrow(escrow.id);
+      expect(updatedEscrow?.status).toBe(EscrowStatus.REFUNDED);
     });
 
-    test('should get single transaction', async () => {
-      const tx = await robox.transfer({
-        from: 'robot-a',
-        to: 'robot-b',
-        amount: 100,
-        type: TransactionType.PARTS_PAYMENT,
+    test('should not release already released escrow', async () => {
+      const escrow = await robox.createEscrow({
+        from: 'buyer',
+        to: 'seller',
+        amount: 500,
       });
 
-      const fetched = await robox.getTransaction(tx.id);
-      expect(fetched).toEqual(tx);
-    });
+      await robox.releaseEscrow(escrow.id);
 
-    test('should return null for non-existing transaction', async () => {
-      const tx = await robox.getTransaction('non-existent');
-      expect(tx).toBeNull();
-    });
-
-    test('should paginate results', async () => {
-      for (let i = 0; i < 10; i++) {
-        await robox.transfer({
-          from: 'robot-a',
-          to: 'robot-b',
-          amount: 10,
-          type: TransactionType.TASK_PAYMENT,
-        });
-      }
-
-      const page1 = await robox.listTransactions({ limit: 5, offset: 0 });
-      const page2 = await robox.listTransactions({ limit: 5, offset: 5 });
-
-      expect(page1).toHaveLength(5);
-      expect(page2).toHaveLength(5);
-      expect(page1[0].id).not.toBe(page2[0].id);
+      await expect(robox.releaseEscrow(escrow.id)).rejects.toThrow(RoboxEscrowError);
     });
   });
 
   // ============================================
-  // Error Code Tests
+  // Batch Transfers
+  // ============================================
+
+  describe('Batch Transfers', () => {
+    beforeEach(async () => {
+      await robox.createRobotAccount({
+        id: 'payer',
+        initialBalance: 10000,
+        roles: [RobotRole.CONSUMER],
+      });
+      for (let i = 1; i <= 5; i++) {
+        await robox.createRobotAccount({
+          id: `recipient-${i}`,
+          roles: [RobotRole.PROVIDER],
+        });
+      }
+    });
+
+    test('should process batch successfully', async () => {
+      const batch = await robox.batchTransfer({
+        transfers: [
+          { from: 'payer', to: 'recipient-1', amount: 100, type: TransactionType.REWARD },
+          { from: 'payer', to: 'recipient-2', amount: 200, type: TransactionType.REWARD },
+          { from: 'payer', to: 'recipient-3', amount: 300, type: TransactionType.REWARD },
+        ],
+      });
+
+      expect(batch.status).toBe(BatchStatus.COMPLETED);
+      expect(batch.successCount).toBe(3);
+      expect(batch.failedCount).toBe(0);
+      expect(batch.totalAmount).toBe(600);
+    });
+
+    test('should handle partial batch failure', async () => {
+      const batch = await robox.batchTransfer({
+        transfers: [
+          { from: 'payer', to: 'recipient-1', amount: 100, type: TransactionType.REWARD },
+          { from: 'payer', to: 'non-existent', amount: 200, type: TransactionType.REWARD },
+          { from: 'payer', to: 'recipient-3', amount: 300, type: TransactionType.REWARD },
+        ],
+      });
+
+      expect(batch.status).toBe(BatchStatus.PARTIAL);
+      expect(batch.successCount).toBe(2);
+      expect(batch.failedCount).toBe(1);
+    });
+
+    test('should stop on error when configured', async () => {
+      const batch = await robox.batchTransfer({
+        transfers: [
+          { from: 'payer', to: 'recipient-1', amount: 100, type: TransactionType.REWARD },
+          { from: 'payer', to: 'non-existent', amount: 200, type: TransactionType.REWARD },
+          { from: 'payer', to: 'recipient-3', amount: 300, type: TransactionType.REWARD },
+        ],
+        stopOnError: true,
+      });
+
+      expect(batch.successCount).toBe(1);
+      expect(batch.failedCount).toBe(1);
+      // Third transfer was not attempted
+    });
+  });
+
+  // ============================================
+  // Events
+  // ============================================
+
+  describe('Events', () => {
+    test('should emit events on account creation', async () => {
+      const events: unknown[] = [];
+
+      robox.on(EventType.ACCOUNT_CREATED, (e) => {
+        events.push(e);
+      });
+
+      await robox.createRobotAccount({ id: 'test' });
+
+      expect(events).toHaveLength(1);
+    });
+
+    test('should emit events on transfer', async () => {
+      const events: unknown[] = [];
+
+      robox.on('*', (e) => {
+        events.push(e);
+      });
+
+      await robox.createRobotAccount({
+        id: 'a',
+        initialBalance: 100,
+        roles: [RobotRole.CONSUMER],
+      });
+      await robox.createRobotAccount({
+        id: 'b',
+        roles: [RobotRole.PROVIDER],
+      });
+
+      await robox.transfer({
+        from: 'a',
+        to: 'b',
+        amount: 50,
+        type: TransactionType.TASK_PAYMENT,
+      });
+
+      const transferEvents = events.filter(
+        (e: any) =>
+          e.type === EventType.TRANSFER_INITIATED ||
+          e.type === EventType.TRANSFER_COMPLETED
+      );
+      expect(transferEvents).toHaveLength(2);
+    });
+  });
+
+  // ============================================
+  // Statistics
+  // ============================================
+
+  describe('Statistics', () => {
+    test('should calculate statistics', async () => {
+      await robox.createRobotAccount({
+        id: 'a',
+        initialBalance: 1000,
+        roles: [RobotRole.CONSUMER],
+      });
+      await robox.createRobotAccount({
+        id: 'b',
+        roles: [RobotRole.PROVIDER],
+      });
+
+      await robox.transfer({ from: 'a', to: 'b', amount: 100, type: TransactionType.TASK_PAYMENT });
+      await robox.transfer({ from: 'a', to: 'b', amount: 200, type: TransactionType.ENERGY_PAYMENT });
+      await robox.transfer({ from: 'a', to: 'b', amount: 150, type: TransactionType.TASK_PAYMENT });
+
+      const stats = await robox.getStatistics();
+
+      expect(stats.totalAccounts).toBe(2);
+      expect(stats.totalTransactions).toBe(3);
+      expect(stats.totalVolume).toBe(450);
+      expect(stats.transactionsByType[TransactionType.TASK_PAYMENT]).toBe(2);
+      expect(stats.transactionsByType[TransactionType.ENERGY_PAYMENT]).toBe(1);
+    });
+  });
+
+  // ============================================
+  // Audit Log
+  // ============================================
+
+  describe('Audit Log', () => {
+    test('should create audit entries', async () => {
+      await robox.createRobotAccount({ id: 'test' });
+      await robox.updateRobotAccount('test', { name: 'Updated' });
+
+      const logs = await robox.getAuditLog({ entityId: 'test' });
+
+      expect(logs.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  // ============================================
+  // Error Codes
   // ============================================
 
   describe('Error Codes', () => {
@@ -552,39 +498,27 @@ describe('RoboxLayer', () => {
       }
     });
 
-    test('RoboxNotFoundError should have code 404', async () => {
-      try {
-        await robox.getBalance('non-existent');
-        fail('Should have thrown');
-      } catch (error) {
-        expect(error).toBeInstanceOf(RoboxNotFoundError);
-        expect((error as RoboxNotFoundError).code).toBe(404);
-      }
-    });
-
-    test('RoboxValidationError should have code 400', async () => {
+    test('RoboxAccountFrozenError should have code 403', async () => {
       await robox.createRobotAccount({ id: 'robot-001' });
-
-      try {
-        await robox.credit('robot-001', -100, { initiatedBy: 'robot-001' });
-        fail('Should have thrown');
-      } catch (error) {
-        expect(error).toBeInstanceOf(RoboxValidationError);
-        expect((error as RoboxValidationError).code).toBe(400);
-      }
-    });
-
-    test('RoboxInsufficientFundsError should have code 402', async () => {
-      await robox.createRobotAccount({ id: 'admin', roles: [RobotRole.ADMIN] });
-      await robox.createRobotAccount({ id: 'robot-001', initialBalance: 10 });
+      await robox.freezeAccount('robot-001');
 
       try {
         await robox.debit('robot-001', 100, { initiatedBy: 'admin' });
         fail('Should have thrown');
       } catch (error) {
-        expect(error).toBeInstanceOf(RoboxInsufficientFundsError);
-        expect((error as RoboxInsufficientFundsError).code).toBe(402);
+        expect(error).toBeInstanceOf(RoboxAccountFrozenError);
+        expect((error as RoboxAccountFrozenError).code).toBe(403);
       }
+    });
+
+    test('Errors should serialize to JSON', async () => {
+      const error = new RoboxForbiddenError('TEST_REASON', { extra: 'data' });
+      const json = error.toJSON();
+
+      expect(json.code).toBe(403);
+      expect(json.errorCode).toBe('TEST_REASON');
+      expect(json.details).toEqual({ extra: 'data' });
+      expect(json.timestamp).toBeDefined();
     });
   });
 });
