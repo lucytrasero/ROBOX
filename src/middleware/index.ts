@@ -97,11 +97,11 @@ export function validationMiddleware(
 export function timingMiddleware(): Middleware {
   return async (ctx, next) => {
     const start = Date.now();
-    (ctx as Record<string, unknown>).startTime = start;
+    (ctx as unknown as Record<string, unknown>).startTime = start;
 
     await next();
 
-    (ctx as Record<string, unknown>).duration = Date.now() - start;
+    (ctx as unknown as Record<string, unknown>).duration = Date.now() - start;
   };
 }
 

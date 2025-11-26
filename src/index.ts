@@ -2,7 +2,15 @@
 export { RoboxLayer } from './RoboxLayer';
 
 // Storage adapters
-export { InMemoryStorage } from './storage';
+export { InMemoryStorage, PostgresStorage } from './storage';
+
+export type {
+  PostgresConfig,
+  PostgresSSLConfig,
+  DatabaseClient,
+  PoolClient,
+  TransactionCallback,
+} from './storage';
 
 // Events
 export { EventEmitter, createEvent } from './events';
@@ -149,8 +157,8 @@ export { DiscoveryManager, ServiceType } from './discovery';
 export type {
   RobotLocation,
   RobotService,
-  ServiceSearchResult,
-  ServiceSearchOptions,
+  ServiceSearchResult as DiscoverySearchResult,
+  ServiceSearchOptions as DiscoverySearchOptions,
   RegisterServiceOptions,
   UpdateLocationOptions,
 } from './discovery';
@@ -169,3 +177,53 @@ export type {
   SubscribeOptions,
   SubscriptionTransferExecutor,
 } from './subscriptions';
+
+// Marketplace (new in v1.1.0)
+export {
+  MarketplaceManager,
+  ServiceStatus,
+  ServiceCategory,
+  OrderStatus,
+  MarketplaceEventType,
+} from './marketplace';
+
+export type {
+  ServiceListing,
+  ServiceOrder,
+  ServiceReview,
+  ServiceAvailability,
+  TimeSlot,
+  ListServiceOptions,
+  UpdateServiceOptions,
+  ServiceSearchOptions,
+  ServiceSearchResult,
+  PurchaseOptions,
+  CreateReviewOptions,
+  OrderFilterOptions,
+  ReviewFilterOptions,
+  MarketplaceStats,
+  MarketplaceConfig,
+} from './marketplace';
+
+// Analytics (new in v1.1.0)
+export {
+  AnalyticsManager,
+  TimePeriod,
+  ExportFormat,
+  ReportType,
+} from './analytics';
+
+export type {
+  StatsOptions,
+  TimeSeriesPoint,
+  AggregatedStats,
+  AccountActivity,
+  TopAccountResult,
+  MoneyFlowNode,
+  MoneyFlowOptions,
+  ExportOptions,
+  ReportOptions,
+  Report,
+  TrendAnalysis,
+  AnalyticsConfig,
+} from './analytics';

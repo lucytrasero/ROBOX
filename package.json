@@ -1,7 +1,7 @@
 {
   "name": "robox-clearing",
-  "version": "1.0.0",
-  "description": "Clearing layer for machine-to-machine (robot-to-robot) interactions with micropayments, escrow, batch transfers and event system",
+  "version": "1.1.0",
+  "description": "Clearing layer for machine-to-machine (robot-to-robot) interactions with micropayments, escrow, batch transfers, marketplace and analytics",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -28,7 +28,9 @@
     "lint:fix": "eslint src --ext .ts --fix",
     "prepublishOnly": "npm run build && npm test",
     "typecheck": "tsc --noEmit",
-    "example": "npx ts-node examples/basic.ts"
+    "example": "npx ts-node examples/basic.ts",
+    "example:marketplace": "npx ts-node examples/marketplace.ts",
+    "example:analytics": "npx ts-node examples/analytics.ts"
   },
   "keywords": [
     "robot",
@@ -43,13 +45,17 @@
     "batch-transfers",
     "robot-payments",
     "automation",
-    "fintech"
+    "fintech",
+    "marketplace",
+    "analytics",
+    "postgresql"
   ],
   "author": "",
   "license": "MIT",
   "devDependencies": {
     "@types/jest": "^29.5.12",
     "@types/node": "^20.11.0",
+    "@types/pg": "^8.15.6",
     "@types/uuid": "^9.0.7",
     "@typescript-eslint/eslint-plugin": "^6.19.0",
     "@typescript-eslint/parser": "^6.19.0",
@@ -61,6 +67,17 @@
   },
   "dependencies": {
     "uuid": "^9.0.1"
+  },
+  "optionalDependencies": {
+    "pg": "^8.11.3"
+  },
+  "peerDependencies": {
+    "pg": "^8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "pg": {
+      "optional": true
+    }
   },
   "engines": {
     "node": ">=18.0.0"

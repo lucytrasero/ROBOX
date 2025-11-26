@@ -1,8 +1,9 @@
 # robox-clearing
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![npm version](https://img.shields.io/npm/v/robox-clearing.svg)](https://www.npmjs.com/package/robox-clearing)
 
-A powerful clearing layer for machine-to-machine (robot-to-robot) interactions with micropayments, escrow, batch transfers, webhooks, and event system.
+A powerful clearing layer for machine-to-machine (robot-to-robot) interactions with micropayments, escrow, marketplace, analytics, and PostgreSQL storage.
 
 ## Features
 
@@ -11,14 +12,15 @@ A powerful clearing layer for machine-to-machine (robot-to-robot) interactions w
 - 💸 **Micropayments** - Fast transfers with fee support
 - 🔒 **Escrow** - Conditional payments with expiration
 - 📦 **Batch Transfers** - Process multiple payments at once
+- 🏪 **Marketplace** - Service listings, orders, and reviews *(NEW in v1.1)*
+- 📊 **Analytics** - Statistics, reports, and data export *(NEW in v1.1)*
+- 🗄️ **PostgreSQL Storage** - Production-ready persistent storage *(NEW in v1.1)*
 - 🪝 **Webhooks** - HTTP callbacks for external integrations
-- 📊 **Statistics** - Transaction analytics and reporting
 - 🔐 **Role-Based Authorization** - Consumer, Provider, Admin, Operator, Auditor
 - 📝 **Audit Log** - Complete operation history
 - 🎯 **Event System** - Subscribe to all operations
 - 🔌 **Middleware Support** - Extend functionality
 - ⚡ **Idempotency** - Safe retries with idempotency keys
-- 🚫 **403 Errors** - Proper authorization error handling
 
 ## Installation
 
@@ -478,6 +480,297 @@ try {
 }
 ```
 
+## PostgreSQL Storage
+
+Production-ready persistent storage with connection pooling and transactions.
+
+```bash
+# Install PostgreSQL driver (optional dependency)
+npm install pg
+```
+
+```typescript
+import { RoboxLayer, PostgresStorage } from 'robox-clearing';
+
+// Create storage with connection string
+const storage = new PostgresStorage({
+  connectionString: 'postgres://user:pass@localhost:5432/robox',
+  poolSize: 10,
+  schema: 'public',
+  autoMigrate: true, // Auto-run migrations
+});
+
+// Connect (runs migrations automatically)
+await storage.connect();
+
+// Use with RoboxLayer
+const robox = new RoboxLayer({ storage });
+
+// Use transactions for atomic operations
+await storage.transaction(async (client) => {
+  // All operations in this block are atomic
+  await client.query('UPDATE accounts SET balance = balance - 100 WHERE id = $1', ['robot-1']);
+  await client.query('UPDATE accounts SET balance = balance + 100 WHERE id = $1', ['robot-2']);
+});
+
+// Disconnect when done
+await storage.disconnect();
+```
+
+### Configuration Options
+
+```typescript
+const storage = new PostgresStorage({
+  // Connection (use either connectionString OR individual fields)
+  connectionString: 'postgres://...',
+  // OR
+  host: 'localhost',
+  port: 5432,
+  database: 'robox',
+  user: 'postgres',
+  password: 'secret',
+
+  // Pool settings
+  poolSize: 10,           // Max connections (default: 10)
+  idleTimeout: 30000,     // Idle timeout in ms (default: 30000)
+  connectionTimeout: 10000, // Connection timeout in ms
+
+  // Schema settings
+  schema: 'robox',        // Database schema (default: 'public')
+  tablePrefix: 'app_',    // Table prefix (default: '')
+  autoMigrate: true,      // Run migrations on connect (default: true)
+
+  // SSL
+  ssl: true,              // Enable SSL
+  // OR detailed SSL config
+  ssl: {
+    rejectUnauthorized: false,
+    ca: '...',
+    cert: '...',
+    key: '...',
+  },
+});
+```
+
+## Marketplace
+
+Enable robots to publish, discover, and purchase services with automatic escrow payments.
+
+```typescript
+import {
+  RoboxLayer,
+  InMemoryStorage,
+  MarketplaceManager,
+  ServiceCategory,
+  MarketplaceEventType,
+} from 'robox-clearing';
+
+const robox = new RoboxLayer({ storage: new InMemoryStorage() });
+const marketplace = new MarketplaceManager(robox, {
+  feePercentage: 2.5,     // Platform fee
+  escrowExpiration: 7 * 24 * 60 * 60 * 1000, // 7 days
+});
+
+// Subscribe to events
+marketplace.on(MarketplaceEventType.ORDER_COMPLETED, (event) => {
+  console.log('Order completed:', event.data);
+});
+
+// List a service
+const service = await marketplace.listService({
+  providerId: 'charger-1',
+  name: 'Fast Charging',
+  description: 'Quick battery charging in 30 minutes',
+  price: 25,
+  category: ServiceCategory.ENERGY,
+  availability: {
+    totalSlots: 5,
+    schedule: '24/7',
+    location: { lat: 52.52, lng: 13.405, radius: 5000 },
+  },
+  duration: 30,
+  tags: ['fast', 'reliable'],
+});
+
+// Search services
+const results = await marketplace.search({
+  category: ServiceCategory.ENERGY,
+  maxPrice: 30,
+  minRating: 4,
+  tags: ['fast'],
+  sortBy: 'rating',
+  sortOrder: 'desc',
+  limit: 10,
+});
+
+// Purchase service (creates escrow automatically)
+const order = await marketplace.purchase({
+  serviceId: service.id,
+  buyerId: 'vacuum-1',
+  quantity: 1,
+  notes: 'Please charge to 100%',
+});
+
+// Provider workflow
+await marketplace.startOrder(order.id);     // Start working
+await marketplace.completeOrder(order.id);  // Complete & release escrow
+
+// Buyer reviews
+const review = await marketplace.createReview({
+  orderId: order.id,
+  reviewerId: 'vacuum-1',
+  rating: 5,
+  comment: 'Excellent service!',
+});
+
+// Provider responds
+await marketplace.respondToReview(review.id, 'Thank you!');
+
+// Get marketplace statistics
+const stats = await marketplace.getStats();
+console.log(`Total volume: ${stats.totalVolume} credits`);
+```
+
+### Service Categories
+
+```typescript
+enum ServiceCategory {
+  ENERGY = 'ENERGY',
+  COMPUTE = 'COMPUTE',
+  STORAGE = 'STORAGE',
+  BANDWIDTH = 'BANDWIDTH',
+  DATA = 'DATA',
+  MAINTENANCE = 'MAINTENANCE',
+  LOGISTICS = 'LOGISTICS',
+  CUSTOM = 'CUSTOM',
+}
+```
+
+### Order Lifecycle
+
+```
+PENDING → PAID → IN_PROGRESS → COMPLETED
+                     ↓
+                 CANCELLED / DISPUTED / REFUNDED
+```
+
+## Analytics
+
+Comprehensive statistics, reporting, and data export.
+
+```typescript
+import {
+  RoboxLayer,
+  InMemoryStorage,
+  AnalyticsManager,
+  TimePeriod,
+  ReportType,
+  ExportFormat,
+} from 'robox-clearing';
+
+const robox = new RoboxLayer({ storage: new InMemoryStorage() });
+const analytics = new AnalyticsManager(robox);
+
+// Get aggregated statistics
+const stats = await analytics.getStats({
+  from: '2025-01-01',
+  to: '2025-01-31',
+  groupBy: TimePeriod.DAY,
+  types: ['TASK_PAYMENT', 'ENERGY_PAYMENT'],
+});
+
+console.log(`Total volume: ${stats.totalVolume}`);
+console.log(`Average: ${stats.averageAmount}`);
+console.log(`Median: ${stats.medianAmount}`);
+console.log(`By type:`, stats.byType);
+console.log(`Time series:`, stats.timeSeries);
+
+// Top spenders / receivers
+const topSpenders = await analytics.topSpenders({ limit: 10 });
+const topReceivers = await analytics.topReceivers({ limit: 10 });
+const mostActive = await analytics.topActive({ limit: 10 });
+
+// Account activity
+const activity = await analytics.getAccountActivity('robot-1');
+console.log(`Net flow: ${activity.netFlow}`);
+console.log(`Most common type: ${activity.mostCommonType}`);
+
+// Money flow analysis
+const flow = await analytics.moneyFlow({
+  from: 'hub',
+  depth: 3,
+  minAmount: 100,
+});
+// Returns tree: hub → factory → robot → charger
+
+// Trend analysis
+const trend = await analytics.analyzeTrend('volume', {
+  groupBy: TimePeriod.DAY,
+});
+console.log(`Trend: ${trend.trend}`);      // 'increasing' | 'decreasing' | 'stable'
+console.log(`Change: ${trend.changePercent}%`);
+console.log(`Anomalies: ${trend.anomalies?.length || 0}`);
+
+// Export to CSV
+await analytics.exportCSV({
+  path: './transactions.csv',
+  from: '2025-01-01',
+  accountIds: ['robot-1', 'robot-2'],
+  delimiter: ',',
+});
+
+// Export to JSON
+await analytics.exportJSON({
+  path: './full-export.json',
+  includeAccounts: true,
+  includeEscrows: true,
+});
+
+// Generate reports
+const report = await analytics.generateReport({
+  type: ReportType.SUMMARY,
+  title: 'Monthly Summary',
+  from: '2025-01-01',
+  to: '2025-01-31',
+});
+
+// Comparison report
+const comparison = await analytics.generateReport({
+  type: ReportType.COMPARISON,
+  from: '2025-01-01',
+  to: '2025-01-31',
+  compareTo: {
+    from: '2024-12-01',
+    to: '2024-12-31',
+  },
+});
+console.log(`Volume change: ${comparison.comparison?.changes.volumeChange}%`);
+```
+
+### Report Types
+
+```typescript
+enum ReportType {
+  SUMMARY = 'summary',           // Basic stats + top 5
+  DETAILED = 'detailed',         // Full breakdown + activities
+  ACCOUNT_ACTIVITY = 'account_activity', // All account activities
+  FLOW_ANALYSIS = 'flow_analysis',       // Money flow trees
+  COMPARISON = 'comparison',     // Period comparison
+}
+```
+
+### Time Periods
+
+```typescript
+enum TimePeriod {
+  HOUR = 'hour',
+  DAY = 'day',
+  WEEK = 'week',
+  MONTH = 'month',
+  YEAR = 'year',
+}
+```
+
 ## Custom Storage
 
 ```typescript
@@ -500,6 +793,7 @@ Full TypeScript support with exported types:
 
 ```typescript
 import type {
+  // Core types
   RobotAccount,
   Transaction,
   Escrow,
@@ -507,9 +801,43 @@ import type {
   Statistics,
   TransferOptions,
   StorageAdapter,
+
+  // Webhooks
   WebhookConfig,
   WebhookDelivery,
+
+  // PostgreSQL
+  PostgresConfig,
+  TransactionCallback,
+
+  // Marketplace
+  ServiceListing,
+  ServiceOrder,
+  ServiceReview,
+  MarketplaceConfig,
+  PurchaseOptions,
+
+  // Analytics
+  AggregatedStats,
+  AccountActivity,
+  TopAccountResult,
+  MoneyFlowNode,
+  Report,
+  ExportOptions,
 } from 'robox-clearing';
+```
+
+## Examples
+
+```bash
+# Run basic example
+npm run example
+
+# Run marketplace example
+npm run example:marketplace
+
+# Run analytics example
+npm run example:analytics
 ```
 
 ## License

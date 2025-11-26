@@ -11,8 +11,8 @@ import type {
   AuditLogEntry,
   AuditAction,
   Statistics,
-  TransactionStatus,
 } from '../types';
+import { TransactionStatus } from '../types';
 import { deepClone } from '../utils';
 
 /**
@@ -103,9 +103,9 @@ export class InMemoryStorage implements StorageAdapter {
     this.transactions.set(transaction.id, stored);
     
     // Store idempotency key if present
-    if ((transaction as Record<string, unknown>).idempotencyKey) {
+    if ((transaction as unknown as Record<string, unknown>).idempotencyKey) {
       this.idempotencyKeys.set(
-        (transaction as Record<string, unknown>).idempotencyKey as string,
+        (transaction as unknown as Record<string, unknown>).idempotencyKey as string,
         transaction.id
       );
     }
