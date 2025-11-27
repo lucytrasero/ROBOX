@@ -114,10 +114,13 @@ export class RoboxLayer {
 
   async createRobotAccount(options: CreateRobotAccountOptions = {}): Promise<RobotAccount> {
     const now = new Date();
+    const { generateApiKey } = await import('./api/utils');
 
     const account: RobotAccount = {
       id: options.id ?? generateId(),
       name: options.name,
+      apiKey: options.apiKey ?? generateApiKey(),
+      ownerId: options.ownerId,
       balance: options.initialBalance ?? 0,
       frozenBalance: 0,
       roles: options.roles ?? [RobotRole.CONSUMER],
@@ -141,6 +144,30 @@ export class RoboxLayer {
 
   async getRobotAccount(id: string): Promise<RobotAccount | null> {
     return this.storage.getAccount(id);
+  }
+
+  async getAccountByApiKey(apiKey: string): Promise<RobotAccount | null> {
+    return this.storage.getAccountByApiKey(apiKey);
+  }
+
+  async getAccountsByOwner(ownerId: string): Promise<RobotAccount[]> {
+    return this.storage.getAccountsByOwner(ownerId);
+  }
+
+  async regenerateApiKey(id: string, initiatedBy?: string): Promise<string> {
+    const account = await this.storage.getAccount(id);
+    if (!account) {
+      throw new RoboxNotFoundError('RobotAccount', id);
+    }
+
+    const { generateApiKey } = await import('./api/utils');
+    const newApiKey = generateApiKey();
+
+    await this.storage.updateAccount(id, { apiKey: newApiKey });
+
+    this.logger?.info('API key regenerated', { id });
+
+    return newApiKey;
   }
 
   async listRobotAccounts(filter?: AccountFilter): Promise<RobotAccount[]> {

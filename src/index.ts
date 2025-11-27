@@ -227,3 +227,36 @@ export type {
   TrendAnalysis,
   AnalyticsConfig,
 } from './analytics';
+
+// Rate Limiting
+export {
+  RateLimiter,
+  InMemoryRateLimitStorage,
+  rateLimitMiddleware as createRateLimitMiddleware,
+  perActionRateLimit,
+  RateLimitExceededError,
+  RateLimitPresets,
+} from './ratelimit';
+
+export type {
+  RateLimitConfig,
+  RateLimitContext,
+  RateLimitResult,
+  RateLimitStorage,
+} from './ratelimit';
+
+// HTTP API
+export {
+  createRoboxRouter,
+  generateApiKey,
+  isValidApiKey,
+  hashApiKey,
+  generateRobotId,
+} from './api';
+
+export type {
+  RoboxRequest,
+  RoboxRouterOptions,
+  ApiResponse,
+  RoboxMiddleware,
+} from './api';

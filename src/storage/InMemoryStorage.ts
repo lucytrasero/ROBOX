@@ -96,6 +96,25 @@ export class InMemoryStorage implements StorageAdapter {
     return accounts.length;
   }
 
+  async getAccountByApiKey(apiKey: string): Promise<RobotAccount | null> {
+    for (const account of this.accounts.values()) {
+      if (account.apiKey === apiKey) {
+        return deepClone(account);
+      }
+    }
+    return null;
+  }
+
+  async getAccountsByOwner(ownerId: string): Promise<RobotAccount[]> {
+    const results: RobotAccount[] = [];
+    for (const account of this.accounts.values()) {
+      if (account.ownerId === ownerId) {
+        results.push(deepClone(account));
+      }
+    }
+    return results;
+  }
+
   // === Transaction operations ===
 
   async createTransaction(transaction: Transaction): Promise<Transaction> {

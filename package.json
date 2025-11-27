@@ -1,7 +1,7 @@
 {
   "name": "robox-clearing",
-  "version": "1.1.0",
-  "description": "Clearing layer for machine-to-machine (robot-to-robot) interactions with micropayments, escrow, batch transfers, marketplace and analytics",
+  "version": "1.2.0",
+  "description": "Clearing layer for machine-to-machine (robot-to-robot) interactions with micropayments, escrow, batch transfers, marketplace, analytics and HTTP API",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -30,7 +30,8 @@
     "typecheck": "tsc --noEmit",
     "example": "npx ts-node examples/basic.ts",
     "example:marketplace": "npx ts-node examples/marketplace.ts",
-    "example:analytics": "npx ts-node examples/analytics.ts"
+    "example:analytics": "npx ts-node examples/analytics.ts",
+    "example:api": "npx ts-node examples/http-api.ts"
   },
   "keywords": [
     "robot",
@@ -48,11 +49,15 @@
     "fintech",
     "marketplace",
     "analytics",
-    "postgresql"
+    "postgresql",
+    "api",
+    "express",
+    "http-api"
   ],
   "author": "",
   "license": "MIT",
   "devDependencies": {
+    "@types/express": "^4.17.21",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.11.0",
     "@types/pg": "^8.15.6",
@@ -72,10 +77,14 @@
     "pg": "^8.11.3"
   },
   "peerDependencies": {
-    "pg": "^8.0.0"
+    "pg": "^8.0.0",
+    "express": "^4.18.0"
   },
   "peerDependenciesMeta": {
     "pg": {
+      "optional": true
+    },
+    "express": {
       "optional": true
     }
   },

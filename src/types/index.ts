@@ -4,6 +4,8 @@
 export interface RobotAccount {
   id: string;
   name?: string;
+  apiKey?: string;
+  ownerId?: string;
   balance: number;
   frozenBalance: number;
   roles: string[];
@@ -215,6 +217,8 @@ export enum RobotRole {
 export interface CreateRobotAccountOptions {
   id?: string;
   name?: string;
+  apiKey?: string;
+  ownerId?: string;
   metadata?: Record<string, unknown>;
   initialBalance?: number;
   roles?: string[];
@@ -461,6 +465,8 @@ export interface StorageAdapter {
   // Accounts
   createAccount(account: RobotAccount): Promise<RobotAccount>;
   getAccount(id: string): Promise<RobotAccount | null>;
+  getAccountByApiKey(apiKey: string): Promise<RobotAccount | null>;
+  getAccountsByOwner(ownerId: string): Promise<RobotAccount[]>;
   updateAccount(id: string, updates: Partial<RobotAccount>): Promise<RobotAccount | null>;
   deleteAccount(id: string): Promise<boolean>;
   listAccounts(filter?: AccountFilter): Promise<RobotAccount[]>;
