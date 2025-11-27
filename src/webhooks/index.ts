@@ -7,6 +7,14 @@ export type {
   CreateWebhookOptions,
   UpdateWebhookOptions,
   WebhookDeliveryFilter,
+  WebhookFilter,
+  TestWebhookOptions,
+  TestWebhookResult,
+  WebhookHealth,
+  BatchWebhookResult,
+  WebhookEventContext,
+  WebhookStats,
+  WebhookValidationResult,
 } from './types';
 
 export { WebhookDeliveryStatus } from './types';

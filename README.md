@@ -207,20 +207,31 @@ console.log(`Success: ${batch.successCount}, Failed: ${batch.failedCount}`);
 
 ## Webhooks
 
-Send HTTP callbacks to external services when events occur.
+Send HTTP callbacks to external services when events occur. Features include event filtering, rate limiting, auto-disable on failures, health monitoring, and more.
 
 ```typescript
 import { WebhookManager, EventType } from 'robox-clearing';
 
 const webhooks = new WebhookManager();
 
-// Register a webhook
+// Register a webhook with advanced options
 const hook = webhooks.create({
+  name: 'Payment Notifications',
   url: 'https://your-server.com/webhook',
   events: [EventType.TRANSFER_COMPLETED, EventType.ESCROW_RELEASED],
   secret: 'your-secret-key',  // For signature verification
   retryAttempts: 3,
   timeoutMs: 10000,
+  robotId: 'robot-001',  // Owner robot
+  // Advanced filtering
+  filterRobotIds: ['vip-robot-1', 'vip-robot-2'],  // Only these robots
+  minAmountThreshold: 1000,  // Only transfers >= 1000
+  maxAmountThreshold: 100000,  // Only transfers <= 100000
+  transactionTypes: ['TASK_PAYMENT', 'ENERGY_PAYMENT'],
+  // Rate limiting & auto-disable
+  rateLimitPerMinute: 60,
+  autoDisableAfterFailures: 10,
+  metadata: { environment: 'production' },
 });
 
 // Register webhook for all events
@@ -230,33 +241,95 @@ const allEventsHook = webhooks.create({
   secret: 'another-secret',
 });
 
-// Dispatch event to all matching webhooks
-await webhooks.dispatch({
-  type: EventType.TRANSFER_COMPLETED,
-  data: { from: 'robot-1', to: 'robot-2', amount: 100 },
-  timestamp: new Date(),
+// Dispatch event with context (for filtering)
+await webhooks.dispatch(
+  {
+    type: EventType.TRANSFER_COMPLETED,
+    data: { from: 'vip-robot-1', to: 'robot-2', amount: 5000 },
+    timestamp: new Date(),
+  },
+  {
+    fromRobotId: 'vip-robot-1',
+    toRobotId: 'robot-2',
+    amount: 5000,
+    transactionType: 'TASK_PAYMENT',
+  }
+);
+
+// Test a webhook
+const testResult = await webhooks.test(hook.id, {
+  data: { message: 'Test payload' },
 });
+console.log(`Test: ${testResult.success ? 'OK' : 'FAILED'} (${testResult.durationMs}ms)`);
+
+// Validate webhook URL
+const validation = await webhooks.validateUrl('https://example.com/webhook');
+console.log(`Reachable: ${validation.reachable}, Response time: ${validation.responseTime}ms`);
 
 // Manage webhooks
 webhooks.disable(hook.id);
 webhooks.enable(hook.id);
+webhooks.rotateSecret(hook.id, 'new-secret-key');
 webhooks.delete(hook.id);
 
-// List all webhooks
+// Batch operations
+webhooks.createBatch([
+  { url: 'https://server1.com/hook', events: ['*'] },
+  { url: 'https://server2.com/hook', events: ['*'] },
+]);
+webhooks.disableBatch(['hook-1', 'hook-2']);
+webhooks.deleteBatch(['hook-1', 'hook-2']);
+webhooks.deleteByRobot('robot-001');  // Delete all webhooks for a robot
+
+// List with filters
 const allHooks = webhooks.list();
+const robotHooks = webhooks.list({ robotId: 'robot-001' });
+const enabledHooks = webhooks.list({ enabled: true });
+const transferHooks = webhooks.list({ event: EventType.TRANSFER_COMPLETED });
 
 // Get delivery history
 const deliveries = webhooks.listDeliveries({
   webhookId: hook.id,
   status: WebhookDeliveryStatus.FAILED,
+  fromDate: new Date('2024-01-01'),
+  minDurationMs: 1000,  // Slow deliveries
 });
 
-// Retry failed delivery
+// Retry failed deliveries
 await webhooks.retryDelivery(deliveryId);
+const retriedCount = await webhooks.retryAllFailed(hook.id);
 
-// Get statistics
+// Health monitoring
+const health = webhooks.getHealth(hook.id);
+console.log(`Healthy: ${health.healthy}, Success rate: ${health.successRate * 100}%`);
+
+const allHealth = webhooks.getAllHealth();
+const unhealthy = webhooks.getUnhealthyWebhooks();
+
+// Rate limit status
+const rateLimit = webhooks.getRateLimitStatus(hook.id);
+console.log(`Remaining: ${rateLimit.remaining}, Resets: ${rateLimit.resetAt}`);
+
+// Comprehensive statistics
 const stats = webhooks.getStats();
-// { totalWebhooks: 2, activeWebhooks: 1, totalDeliveries: 50, ... }
+// {
+//   totalWebhooks: 5,
+//   activeWebhooks: 4,
+//   totalDeliveries: 150,
+//   successfulDeliveries: 145,
+//   failedDeliveries: 5,
+//   pendingDeliveries: 0,
+//   averageResponseTime: 234,
+//   deliveriesByEvent: { 'transfer.completed': 100, 'escrow.created': 50 },
+//   deliveriesByStatus: { SUCCESS: 145, FAILED: 5, ... }
+// }
+
+// Export/Import (for backup)
+const backup = webhooks.export();
+webhooks.import(backup);
+
+// Cleanup
+webhooks.clearOldDeliveries(new Date(Date.now() - 7 * 24 * 3600000));  // Clear week-old
 ```
 
 ### Webhook Payload
@@ -275,7 +348,9 @@ Your endpoint will receive POST requests with this payload:
     "type": "TASK_PAYMENT"
   },
   "timestamp": "2025-11-26T12:00:00.000Z",
-  "signature": "a1c3b2f1e4d5..."
+  "signature": "a1c3b2f1e4d5...",
+  "webhookId": "hook-123",
+  "attemptNumber": 0
 }
 ```
 
@@ -283,11 +358,13 @@ Your endpoint will receive POST requests with this payload:
 
 ```
 Content-Type: application/json
-User-Agent: RoboxClearing/1.0
+User-Agent: RoboxClearing/1.1
 X-Webhook-ID: hook-id
 X-Delivery-ID: delivery-id
 X-Event-Type: transfer.completed
+X-Timestamp: 2025-11-26T12:00:00.000Z
 X-Signature: hmac-sha256-signature
+X-Attempt-Number: 0
 ```
 
 ### Verify Webhook Signature
@@ -301,18 +378,24 @@ app.post('/webhook', (req, res) => {
   const payload = JSON.stringify(req.body);
   const secret = 'your-secret-key';
 
+  // Timing-safe signature verification
   const isValid = WebhookManager.verifySignature(payload, signature, secret);
   
   if (!isValid) {
     return res.status(401).send('Invalid signature');
   }
 
-  // Process webhook
-  console.log('Event:', req.body.event);
-  console.log('Data:', req.body.data);
+  // Parse and process webhook
+  const webhookPayload = WebhookManager.parsePayload(payload);
+  console.log('Event:', webhookPayload.event);
+  console.log('Data:', webhookPayload.data);
+  console.log('Attempt:', webhookPayload.attemptNumber);
   
   res.status(200).send('OK');
 });
+
+// Create signature (for testing)
+const testSignature = WebhookManager.createSignature(payload, secret);
 ```
 
 ## Events
