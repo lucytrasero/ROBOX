@@ -5,9 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.0] - 2025-11-27
+## [1.2.0] - 2025-11-28
 
 ### Added
+
+#### Invoice Module (NEW)
+- **Complete Invoice Management**
+  - Create invoices with multiple line items
+  - Automatic tax and discount calculation
+  - Sequential invoice numbering with customizable prefix
+  - Draft workflow (create as draft → update → send)
+  - Cancel, dispute, and refund invoices
+  - Export/import for backup and migration
+
+- **Partial Payments**
+  - Allow or disallow partial payments per invoice
+  - Configurable minimum partial payment amount
+  - Track payment history with transaction links
+  - Automatic status updates (PENDING → PARTIALLY_PAID → PAID)
+
+- **Invoice Templates**
+  - Create reusable templates for recurring invoices
+  - Generate invoices from templates with overrides
+  - Template management (create, update, delete, list)
+
+- **Automatic Reminders**
+  - Configurable reminder schedule (days before/after due)
+  - Multiple reminder types (UPCOMING_DUE, DUE_TODAY, OVERDUE, FINAL_NOTICE)
+  - Custom reminder sender integration
+  - Reminder history tracking
+
+- **Overdue Detection**
+  - Automatic status change to OVERDUE
+  - Background processor for invoice monitoring
+  - Overdue amount tracking in statistics
+
+- **Comprehensive Statistics**
+  - Total/draft/pending/paid/overdue/cancelled counts
+  - Total revenue, outstanding, and overdue amounts
+  - Average payment time calculation
+  - Statistics by status and currency
+  - Filter by issuer, recipient, and date range
+
+- **Event System**
+  - Events for all invoice lifecycle changes
+  - INVOICE_CREATED, INVOICE_PAID, INVOICE_OVERDUE, etc.
+  - REMINDER_SENT events
+  - Template events (created, updated, deleted)
+
+- **Integration**
+  - Payment executor for automatic transfers
+  - Reminder sender for notifications
+  - Full TypeScript support with comprehensive types
 
 #### Enhanced Webhooks
 - **Advanced Filtering**: Filter events by robot IDs, amount thresholds, transaction types

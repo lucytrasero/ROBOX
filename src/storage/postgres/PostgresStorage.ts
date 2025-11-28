@@ -239,6 +239,24 @@ export class PostgresStorage implements StorageAdapter {
     return rows[0] ? this.mapAccountRow(rows[0]) : null;
   }
 
+  async getAccountByApiKey(apiKey: string): Promise<RobotAccount | null> {
+    const pool = this.getPool();
+    const { rows } = await pool.query<AccountRow>(
+      `SELECT * FROM ${this.table('accounts')} WHERE api_key = $1`,
+      [apiKey]
+    );
+    return rows[0] ? this.mapAccountRow(rows[0]) : null;
+  }
+
+  async getAccountsByOwner(ownerId: string): Promise<RobotAccount[]> {
+    const pool = this.getPool();
+    const { rows } = await pool.query<AccountRow>(
+      `SELECT * FROM ${this.table('accounts')} WHERE owner_id = $1 ORDER BY created_at DESC`,
+      [ownerId]
+    );
+    return rows.map(row => this.mapAccountRow(row));
+  }
+
   async updateAccount(
     id: string,
     updates: Partial<RobotAccount>

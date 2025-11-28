@@ -31,6 +31,7 @@
     "example": "npx ts-node examples/basic.ts",
     "example:marketplace": "npx ts-node examples/marketplace.ts",
     "example:analytics": "npx ts-node examples/analytics.ts",
+    "example:invoices": "npx ts-node examples/invoices.ts",
     "example:api": "npx ts-node examples/http-api.ts"
   },
   "keywords": [
@@ -49,6 +50,8 @@
     "fintech",
     "marketplace",
     "analytics",
+    "invoices",
+    "billing",
     "postgresql",
     "api",
     "express",

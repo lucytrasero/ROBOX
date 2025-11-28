@@ -12,9 +12,10 @@ A powerful clearing layer for machine-to-machine (robot-to-robot) interactions w
 - 💸 **Micropayments** - Fast transfers with fee support
 - 🔒 **Escrow** - Conditional payments with expiration
 - 📦 **Batch Transfers** - Process multiple payments at once
-- 🏪 **Marketplace** - Service listings, orders, and reviews *(NEW in v1.1)*
-- 📊 **Analytics** - Statistics, reports, and data export *(NEW in v1.1)*
-- 🗄️ **PostgreSQL Storage** - Production-ready persistent storage *(NEW in v1.1)*
+- 🏪 **Marketplace** - Service listings, orders, and reviews *(v1.1)*
+- 📊 **Analytics** - Statistics, reports, and data export *(v1.1)*
+- 🧾 **Invoices** - Templates, partial payments, reminders *(NEW in v1.2)*
+- 🗄️ **PostgreSQL Storage** - Production-ready persistent storage
 - 🪝 **Webhooks** - HTTP callbacks for external integrations
 - 🔐 **Role-Based Authorization** - Consumer, Provider, Admin, Operator, Auditor
 - 📝 **Audit Log** - Complete operation history
@@ -854,6 +855,193 @@ enum TimePeriod {
 }
 ```
 
+## Invoices *(NEW in v1.2)*
+
+Complete invoice management with templates, partial payments, and automatic reminders.
+
+```typescript
+import {
+  RoboxLayer,
+  InMemoryStorage,
+  InvoiceManager,
+  InvoiceStatus,
+  InvoiceEventType,
+  TransactionType,
+} from 'robox-clearing';
+
+const robox = new RoboxLayer({ storage: new InMemoryStorage() });
+
+// Create invoice manager with payment integration
+const invoices = new InvoiceManager({
+  config: {
+    defaultCurrency: 'CREDITS',
+    defaultPaymentTermsDays: 30,
+    autoReminders: true,
+    defaultReminderDaysBefore: [7, 3, 1],
+    defaultReminderDaysAfter: [1, 3, 7, 14],
+    invoiceNumberPrefix: 'INV',
+  },
+  executor: async (params) => {
+    const tx = await robox.transfer({
+      from: params.from,
+      to: params.to,
+      amount: params.amount,
+      type: TransactionType.TASK_PAYMENT,
+      meta: { invoiceId: params.invoiceId },
+    });
+    return { transactionId: tx.id };
+  },
+  reminderSender: async (params) => {
+    console.log(`Reminder: Invoice ${params.invoiceNumber} due in ${params.daysUntilDue} days`);
+  },
+});
+
+// Start background processor (overdue detection, reminders)
+invoices.start();
+
+// Create invoice with line items
+const invoice = await invoices.create({
+  issuerId: 'provider-1',
+  recipientId: 'customer-1',
+  lineItems: [
+    { description: 'Charging service (2 hours)', quantity: 2, unitPrice: 50 },
+    { description: 'Battery diagnostics', quantity: 1, unitPrice: 30 },
+  ],
+  dueDays: 14,
+  taxRate: 10,
+  allowPartialPayment: true,
+  minPartialPayment: 25,
+  notes: 'Thank you for your business!',
+});
+
+console.log(`Invoice ${invoice.number}: ${invoice.total} CREDITS`);
+
+// Pay invoice in full
+await invoices.pay({ invoiceId: invoice.id });
+
+// Or make partial payment
+await invoices.pay({ invoiceId: invoice.id, amount: 50 });
+await invoices.pay({ invoiceId: invoice.id, amount: 80 });
+
+// Check payment history
+const payments = invoices.getPayments(invoice.id);
+payments.forEach(p => console.log(`Paid: ${p.amount} at ${p.paidAt}`));
+```
+
+### Invoice Templates
+
+```typescript
+// Create reusable template
+const template = await invoices.createTemplate({
+  issuerId: 'provider-1',
+  name: 'Monthly Maintenance',
+  lineItems: [
+    { description: 'Diagnostic scan', quantity: 1, unitPrice: 30 },
+    { description: 'Lubrication', quantity: 1, unitPrice: 20 },
+    { description: 'Software update', quantity: 1, unitPrice: 25 },
+  ],
+  paymentTermsDays: 14,
+  autoReminders: true,
+});
+
+// Create invoices from template
+const jan = await invoices.createFromTemplate({
+  templateId: template.id,
+  recipientId: 'customer-1',
+  overrides: { notes: 'January maintenance' },
+});
+
+const feb = await invoices.createFromTemplate({
+  templateId: template.id,
+  recipientId: 'customer-1',
+  overrides: { notes: 'February maintenance' },
+});
+```
+
+### Draft Workflow
+
+```typescript
+// Create as draft
+const draft = await invoices.create({
+  issuerId: 'provider-1',
+  recipientId: 'customer-1',
+  lineItems: [{ description: 'Consulting', quantity: 2, unitPrice: 100 }],
+  asDraft: true,
+});
+
+// Update draft
+await invoices.update(draft.id, {
+  lineItems: [
+    { description: 'Consulting', quantity: 2, unitPrice: 100 },
+    { description: 'Documentation', quantity: 1, unitPrice: 50 },
+  ],
+  discount: 25,
+});
+
+// Send to customer
+await invoices.send(draft.id);
+```
+
+### Invoice Operations
+
+```typescript
+// Cancel invoice
+await invoices.cancel(invoice.id, 'Customer requested cancellation');
+
+// Dispute invoice
+await invoices.dispute(invoice.id, 'Service not delivered as specified');
+
+// Refund paid invoice
+await invoices.refund(invoice.id, 100, 'Partial refund for service issue');
+
+// Send manual reminder
+await invoices.sendReminder(invoice.id, ReminderType.OVERDUE);
+```
+
+### Statistics
+
+```typescript
+const stats = invoices.getStats({ issuerId: 'provider-1' });
+
+console.log(`Total invoices: ${stats.totalInvoices}`);
+console.log(`Pending: ${stats.pendingInvoices}`);
+console.log(`Paid: ${stats.paidInvoices}`);
+console.log(`Overdue: ${stats.overdueInvoices}`);
+console.log(`Revenue: ${stats.totalRevenue} CREDITS`);
+console.log(`Outstanding: ${stats.totalOutstanding} CREDITS`);
+console.log(`Avg payment time: ${stats.averagePaymentTime} days`);
+```
+
+### Invoice Events
+
+```typescript
+invoices.on(InvoiceEventType.INVOICE_CREATED, (event) => {
+  console.log('New invoice:', event.data.invoice.number);
+});
+
+invoices.on(InvoiceEventType.INVOICE_PAID, (event) => {
+  console.log('Invoice paid:', event.data.invoice.number);
+});
+
+invoices.on(InvoiceEventType.INVOICE_OVERDUE, (event) => {
+  console.log('Invoice overdue:', event.data.invoice.number);
+});
+
+invoices.on(InvoiceEventType.REMINDER_SENT, (event) => {
+  console.log('Reminder sent:', event.data.reminder.type);
+});
+```
+
+### Invoice Status Lifecycle
+
+```
+DRAFT → PENDING → PARTIALLY_PAID → PAID
+              ↓         ↓
+          OVERDUE   OVERDUE
+              ↓         ↓
+          CANCELLED / DISPUTED / REFUNDED
+```
+
 ## Custom Storage
 
 ```typescript
@@ -907,9 +1095,16 @@ import type {
   MoneyFlowNode,
   Report,
   ExportOptions,
+
+  // Invoices
+  Invoice,
+  InvoiceTemplate,
+  InvoicePayment,
+  InvoiceStats,
+  CreateInvoiceOptions,
+  PayInvoiceOptions,
 } from 'robox-clearing';
 ```
-
 ## Examples
 
 ```bash
@@ -921,6 +1116,9 @@ npm run example:marketplace
 
 # Run analytics example
 npm run example:analytics
+
+# Run invoices example
+npm run example:invoices
 ```
 
 ## License

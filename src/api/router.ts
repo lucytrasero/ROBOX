@@ -31,16 +31,18 @@ export function createRoboxRouter(options: RoboxRouterOptions): Router {
 
   router.use(json());
 
-  const apiKeyAuth = async (req: RoboxRequest, res: Response, next: NextFunction) => {
+  const apiKeyAuth = async (req: RoboxRequest, res: Response, next: NextFunction): Promise<void> => {
     const apiKey = (req.headers[apiKeyHeader.toLowerCase()] as string) || req.query[apiKeyQuery] as string;
 
     if (!apiKey) {
-      return res.status(401).json(errorResponse('API key required', 'AUTH_REQUIRED'));
+      res.status(401).json(errorResponse('API key required', 'AUTH_REQUIRED')); return;
+      return;
     }
 
     const robot = await robox.getAccountByApiKey(apiKey);
     if (!robot) {
-      return res.status(401).json(errorResponse('Invalid API key', 'INVALID_API_KEY'));
+      res.status(401).json(errorResponse('Invalid API key', 'INVALID_API_KEY')); return;
+      return;
     }
 
     req.robot = robot;
@@ -48,7 +50,7 @@ export function createRoboxRouter(options: RoboxRouterOptions): Router {
     next();
   };
 
-  router.get('/me', apiKeyAuth, async (req: RoboxRequest, res: Response) => {
+  router.get('/me', apiKeyAuth, async (req: RoboxRequest, res: Response): Promise<void> => {
     try {
       res.json(successResponse({
         id: req.robot!.id,
@@ -64,7 +66,7 @@ export function createRoboxRouter(options: RoboxRouterOptions): Router {
     }
   });
 
-  router.get('/balance', apiKeyAuth, async (req: RoboxRequest, res: Response) => {
+  router.get('/balance', apiKeyAuth, async (req: RoboxRequest, res: Response): Promise<void> => {
     try {
       const account = await robox.getRobotAccount(req.robot!.id);
       res.json(successResponse({
@@ -78,12 +80,12 @@ export function createRoboxRouter(options: RoboxRouterOptions): Router {
     }
   });
 
-  router.post('/transfer', apiKeyAuth, async (req: RoboxRequest, res: Response) => {
+  router.post('/transfer', apiKeyAuth, async (req: RoboxRequest, res: Response): Promise<void> => {
     try {
       const { to, amount, type, memo, idempotencyKey } = req.body;
 
       if (!to || !amount) {
-        return res.status(400).json(errorResponse('Missing required fields: to, amount', 'VALIDATION_ERROR'));
+        res.status(400).json(errorResponse('Missing required fields: to, amount', 'VALIDATION_ERROR')); return;
       }
 
       const tx = await robox.transfer({
@@ -113,17 +115,17 @@ export function createRoboxRouter(options: RoboxRouterOptions): Router {
     }
   });
 
-  router.post('/transfer/by-api-key', apiKeyAuth, async (req: RoboxRequest, res: Response) => {
+  router.post('/transfer/by-api-key', apiKeyAuth, async (req: RoboxRequest, res: Response): Promise<void> => {
     try {
       const { recipientApiKey, amount, type, memo } = req.body;
 
       if (!recipientApiKey || !amount) {
-        return res.status(400).json(errorResponse('Missing required fields: recipientApiKey, amount', 'VALIDATION_ERROR'));
+        res.status(400).json(errorResponse('Missing required fields: recipientApiKey, amount', 'VALIDATION_ERROR')); return;
       }
 
       const recipient = await robox.getAccountByApiKey(recipientApiKey);
       if (!recipient) {
-        return res.status(404).json(errorResponse('Recipient not found', 'NOT_FOUND'));
+        res.status(404).json(errorResponse('Recipient not found', 'NOT_FOUND')); return;
       }
 
       const tx = await robox.transfer({
@@ -150,12 +152,12 @@ export function createRoboxRouter(options: RoboxRouterOptions): Router {
     }
   });
 
-  router.post('/deduct', apiKeyAuth, async (req: RoboxRequest, res: Response) => {
+  router.post('/deduct', apiKeyAuth, async (req: RoboxRequest, res: Response): Promise<void> => {
     try {
       const { amount, reason } = req.body;
 
       if (!amount) {
-        return res.status(400).json(errorResponse('Missing required field: amount', 'VALIDATION_ERROR'));
+        res.status(400).json(errorResponse('Missing required field: amount', 'VALIDATION_ERROR')); return;
       }
 
       const result = await robox.debit(req.robot!.id, Number(amount), {
@@ -177,12 +179,12 @@ export function createRoboxRouter(options: RoboxRouterOptions): Router {
     }
   });
 
-  router.post('/credit', apiKeyAuth, async (req: RoboxRequest, res: Response) => {
+  router.post('/credit', apiKeyAuth, async (req: RoboxRequest, res: Response): Promise<void> => {
     try {
       const { amount, reason } = req.body;
 
       if (!amount) {
-        return res.status(400).json(errorResponse('Missing required field: amount', 'VALIDATION_ERROR'));
+        res.status(400).json(errorResponse('Missing required field: amount', 'VALIDATION_ERROR')); return;
       }
 
       const result = await robox.credit(req.robot!.id, Number(amount), {
@@ -202,7 +204,7 @@ export function createRoboxRouter(options: RoboxRouterOptions): Router {
     }
   });
 
-  router.get('/transactions', apiKeyAuth, async (req: RoboxRequest, res: Response) => {
+  router.get('/transactions', apiKeyAuth, async (req: RoboxRequest, res: Response): Promise<void> => {
     try {
       const { limit, offset, type, status } = req.query;
 
@@ -232,16 +234,16 @@ export function createRoboxRouter(options: RoboxRouterOptions): Router {
     }
   });
 
-  router.get('/transactions/:txId', apiKeyAuth, async (req: RoboxRequest, res: Response) => {
+  router.get('/transactions/:txId', apiKeyAuth, async (req: RoboxRequest, res: Response): Promise<void> => {
     try {
       const tx = await robox.getTransaction(req.params.txId);
 
       if (!tx) {
-        return res.status(404).json(errorResponse('Transaction not found', 'NOT_FOUND'));
+        res.status(404).json(errorResponse('Transaction not found', 'NOT_FOUND')); return;
       }
 
       if (tx.from !== req.robot!.id && tx.to !== req.robot!.id) {
-        return res.status(403).json(errorResponse('Access denied', 'FORBIDDEN'));
+        res.status(403).json(errorResponse('Access denied', 'FORBIDDEN')); return;
       }
 
       res.json(successResponse(tx));
@@ -250,12 +252,12 @@ export function createRoboxRouter(options: RoboxRouterOptions): Router {
     }
   });
 
-  router.post('/escrow', apiKeyAuth, async (req: RoboxRequest, res: Response) => {
+  router.post('/escrow', apiKeyAuth, async (req: RoboxRequest, res: Response): Promise<void> => {
     try {
       const { to, amount, condition, expiresAt } = req.body;
 
       if (!to || !amount) {
-        return res.status(400).json(errorResponse('Missing required fields: to, amount', 'VALIDATION_ERROR'));
+        res.status(400).json(errorResponse('Missing required fields: to, amount', 'VALIDATION_ERROR')); return;
       }
 
       const escrow = await robox.createEscrow({
@@ -284,16 +286,16 @@ export function createRoboxRouter(options: RoboxRouterOptions): Router {
     }
   });
 
-  router.post('/escrow/:escrowId/release', apiKeyAuth, async (req: RoboxRequest, res: Response) => {
+  router.post('/escrow/:escrowId/release', apiKeyAuth, async (req: RoboxRequest, res: Response): Promise<void> => {
     try {
       const escrow = await robox.getEscrow(req.params.escrowId);
 
       if (!escrow) {
-        return res.status(404).json(errorResponse('Escrow not found', 'NOT_FOUND'));
+        res.status(404).json(errorResponse('Escrow not found', 'NOT_FOUND')); return;
       }
 
       if (escrow.from !== req.robot!.id && escrow.to !== req.robot!.id) {
-        return res.status(403).json(errorResponse('Access denied', 'FORBIDDEN'));
+        res.status(403).json(errorResponse('Access denied', 'FORBIDDEN')); return;
       }
 
       const tx = await robox.releaseEscrow(req.params.escrowId, req.robot!.id);
@@ -309,16 +311,16 @@ export function createRoboxRouter(options: RoboxRouterOptions): Router {
     }
   });
 
-  router.post('/escrow/:escrowId/refund', apiKeyAuth, async (req: RoboxRequest, res: Response) => {
+  router.post('/escrow/:escrowId/refund', apiKeyAuth, async (req: RoboxRequest, res: Response): Promise<void> => {
     try {
       const escrow = await robox.getEscrow(req.params.escrowId);
 
       if (!escrow) {
-        return res.status(404).json(errorResponse('Escrow not found', 'NOT_FOUND'));
+        res.status(404).json(errorResponse('Escrow not found', 'NOT_FOUND')); return;
       }
 
       if (escrow.from !== req.robot!.id) {
-        return res.status(403).json(errorResponse('Only sender can refund', 'FORBIDDEN'));
+        res.status(403).json(errorResponse('Only sender can refund', 'FORBIDDEN')); return;
       }
 
       await robox.refundEscrow(req.params.escrowId, req.robot!.id);
@@ -332,7 +334,7 @@ export function createRoboxRouter(options: RoboxRouterOptions): Router {
     }
   });
 
-  router.get('/escrows', apiKeyAuth, async (req: RoboxRequest, res: Response) => {
+  router.get('/escrows', apiKeyAuth, async (req: RoboxRequest, res: Response): Promise<void> => {
     try {
       const { status } = req.query;
 
@@ -358,12 +360,12 @@ export function createRoboxRouter(options: RoboxRouterOptions): Router {
     }
   });
 
-  router.post('/batch', apiKeyAuth, async (req: RoboxRequest, res: Response) => {
+  router.post('/batch', apiKeyAuth, async (req: RoboxRequest, res: Response): Promise<void> => {
     try {
       const { transfers, stopOnError } = req.body;
 
       if (!transfers || !Array.isArray(transfers) || transfers.length === 0) {
-        return res.status(400).json(errorResponse('Missing or empty transfers array', 'VALIDATION_ERROR'));
+        res.status(400).json(errorResponse('Missing or empty transfers array', 'VALIDATION_ERROR')); return;
       }
 
       const batch = await robox.batchTransfer({
@@ -397,7 +399,7 @@ export function createRoboxRouter(options: RoboxRouterOptions): Router {
     }
   });
 
-  router.get('/stats', apiKeyAuth, async (req: RoboxRequest, res: Response) => {
+  router.get('/stats', apiKeyAuth, async (req: RoboxRequest, res: Response): Promise<void> => {
     try {
       const account = await robox.getRobotAccount(req.robot!.id);
       const transactions = await robox.listTransactions({ robotId: req.robot!.id });

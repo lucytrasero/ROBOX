@@ -246,6 +246,35 @@ export {
   RateLimitPresets,
 } from './ratelimit';
 
+// Invoices (new in v1.2.0)
+export {
+  InvoiceManager,
+  InvoiceStatus,
+  ReminderType,
+  InvoiceEventType,
+} from './invoices';
+
+export type {
+  Invoice,
+  InvoiceLineItem,
+  InvoicePayment,
+  InvoiceReminder,
+  InvoiceTemplate,
+  CreateInvoiceOptions,
+  CreateFromTemplateOptions,
+  UpdateInvoiceOptions,
+  CreateTemplateOptions,
+  UpdateTemplateOptions,
+  PayInvoiceOptions,
+  InvoiceFilter,
+  TemplateFilter,
+  InvoiceStats,
+  ReminderConfig,
+  InvoiceManagerConfig,
+  InvoicePaymentExecutor,
+  ReminderSender,
+} from './invoices';
+
 export type {
   RateLimitConfig,
   RateLimitContext,
