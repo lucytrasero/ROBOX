@@ -1,7 +1,7 @@
 {
   "name": "robox-clearing",
-  "version": "1.2.0",
-  "description": "Clearing layer for machine-to-machine (robot-to-robot) interactions with micropayments, escrow, batch transfers, marketplace, analytics and HTTP API",
+  "version": "2.0.0",
+  "description": "Clearing layer for machine-to-machine (robot-to-robot) interactions with micropayments, escrow, batch transfers, marketplace, analytics, invoices, Bluetooth communication and HTTP API",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -32,6 +32,7 @@
     "example:marketplace": "npx ts-node examples/marketplace.ts",
     "example:analytics": "npx ts-node examples/analytics.ts",
     "example:invoices": "npx ts-node examples/invoices.ts",
+    "example:bluetooth": "npx ts-node examples/bluetooth.ts",
     "example:api": "npx ts-node examples/http-api.ts"
   },
   "keywords": [
@@ -55,7 +56,11 @@
     "postgresql",
     "api",
     "express",
-    "http-api"
+    "http-api",
+    "bluetooth",
+    "ble",
+    "mesh-network",
+    "proximity"
   ],
   "author": "",
   "license": "MIT",
@@ -68,6 +73,7 @@
     "@typescript-eslint/eslint-plugin": "^6.19.0",
     "@typescript-eslint/parser": "^6.19.0",
     "eslint": "^8.56.0",
+    "express": "^5.1.0",
     "jest": "^29.7.0",
     "ts-jest": "^29.1.2",
     "tsup": "^8.0.1",
@@ -77,11 +83,14 @@
     "uuid": "^9.0.1"
   },
   "optionalDependencies": {
+    "@abandonware/noble": "^1.9.2-15",
+    "bleno": "^0.5.0",
+    "bluetooth-serial-port": "^3.0.0",
     "pg": "^8.11.3"
   },
   "peerDependencies": {
-    "pg": "^8.0.0",
-    "express": "^4.18.0"
+    "express": "^4.18.0",
+    "pg": "^8.0.0"
   },
   "peerDependenciesMeta": {
     "pg": {

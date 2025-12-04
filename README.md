@@ -14,7 +14,8 @@ A powerful clearing layer for machine-to-machine (robot-to-robot) interactions w
 - 📦 **Batch Transfers** - Process multiple payments at once
 - 🏪 **Marketplace** - Service listings, orders, and reviews *(v1.1)*
 - 📊 **Analytics** - Statistics, reports, and data export *(v1.1)*
-- 🧾 **Invoices** - Templates, partial payments, reminders *(NEW in v1.2)*
+- 🧾 **Invoices** - Templates, partial payments, reminders *(v1.2)*
+- 📶 **Bluetooth** - BLE/Classic robot-to-robot communication *(NEW in v2.0)*
 - 🗄️ **PostgreSQL Storage** - Production-ready persistent storage
 - 🪝 **Webhooks** - HTTP callbacks for external integrations
 - 🔐 **Role-Based Authorization** - Consumer, Provider, Admin, Operator, Auditor
@@ -1042,6 +1043,197 @@ DRAFT → PENDING → PARTIALLY_PAID → PAID
           CANCELLED / DISPUTED / REFUNDED
 ```
 
+## Bluetooth Communication *(NEW in v2.0)*
+
+Robot-to-robot communication over Bluetooth Low Energy (BLE) and Classic Bluetooth.
+
+### Setup
+
+```typescript
+import {
+  BluetoothManager,
+  BluetoothMode,
+  BluetoothMessageType,
+  BluetoothEventType,
+  MessagePriority,
+} from 'robox-clearing';
+
+const bluetooth = new BluetoothManager({
+  robotId: 'robot-001',
+  deviceName: 'Worker Bot',
+  mode: BluetoothMode.BLE,
+  maxConnections: 10,
+  onMessage: (msg) => console.log('Received:', msg.type),
+  onDeviceDiscovered: (device) => console.log('Found:', device.name),
+});
+
+await bluetooth.initialize();
+```
+
+### Device Discovery
+
+```typescript
+// Start scanning for nearby robots
+await bluetooth.startScan();
+
+// Or perform a timed scan
+const result = await bluetooth.scan({
+  duration: 5000,
+  rssiThreshold: -70,
+  serviceUUIDs: ['00001800-0000-1000-8000-00805f9b34fb'],
+});
+
+console.log(`Found ${result.devices.length} devices`);
+
+// Get all discovered devices
+const devices = bluetooth.getDiscoveredDevices();
+```
+
+### Connection & Messaging
+
+```typescript
+// Connect to another robot
+const connection = await bluetooth.connect({
+  deviceId: 'device-001',
+  robotId: 'robot-002',
+  mode: BluetoothMode.BLE,
+  timeout: 5000,
+});
+
+if (connection.success) {
+  // Send a message
+  await bluetooth.sendMessage('robot-002', {
+    type: BluetoothMessageType.DATA,
+    payload: { command: 'status' },
+  }, {
+    priority: MessagePriority.HIGH,
+    reliable: true,
+  });
+
+  // Broadcast to all connected robots
+  await bluetooth.broadcast({
+    type: BluetoothMessageType.ANNOUNCE,
+    payload: { message: 'Hello everyone!' },
+  });
+}
+
+// Listen for specific message types
+bluetooth.onMessage(BluetoothMessageType.COMMAND, (msg) => {
+  console.log('Command received:', msg.payload);
+});
+```
+
+### Transaction Over Bluetooth
+
+```typescript
+// Request a transaction
+const result = await bluetooth.requestTransaction('robot-002', {
+  from: 'robot-001',
+  to: 'robot-002',
+  amount: 50,
+  type: 'SERVICE_PAYMENT',
+  meta: { service: 'charging' },
+});
+
+if (result.accepted) {
+  console.log('Transaction accepted:', result.transactionId);
+}
+
+// Confirm or reject incoming transactions
+await bluetooth.confirmTransaction('robot-001', 'tx-001');
+await bluetooth.rejectTransaction('robot-001', 'tx-001', 'Insufficient balance');
+```
+
+### Service Advertisement
+
+```typescript
+// Start advertising
+await bluetooth.startAdvertising();
+
+// Advertise a service
+bluetooth.advertiseService({
+  robotId: 'robot-001',
+  serviceId: 'svc-001',
+  serviceType: 'CHARGING',
+  name: 'Fast Charging Station',
+  price: 10,
+  currency: 'TOKEN',
+  available: true,
+});
+
+// Query services from another robot
+const services = await bluetooth.queryServices('robot-002');
+```
+
+### Proximity Detection
+
+```typescript
+// Estimate distance to a device
+const distance = bluetooth.estimateDistance('device-001');
+console.log(`Distance: ~${distance?.distance}m (${distance?.accuracy})`);
+
+// Get proximity zone
+const zone = bluetooth.getProximityZone('device-001');
+// zone: 'IMMEDIATE' (<0.5m), 'NEAR' (0.5-3m), 'FAR' (3-10m), 'UNKNOWN'
+
+// Find devices in a zone
+const nearbyDevices = bluetooth.findDevicesInZone(ProximityZone.NEAR);
+```
+
+### Mesh Networking
+
+```typescript
+// Create a mesh network
+const mesh = await bluetooth.createMesh('RobotSwarm');
+
+// Or join an existing mesh
+await bluetooth.joinMesh(meshId, 'robot-002');
+
+// Broadcast through the mesh
+await bluetooth.meshBroadcast({
+  type: BluetoothMessageType.ANNOUNCE,
+  payload: { alert: 'Low battery' },
+});
+
+// Leave mesh
+await bluetooth.leaveMesh();
+```
+
+### Events
+
+```typescript
+bluetooth.onEvent(BluetoothEventType.DEVICE_DISCOVERED, (event) => {
+  console.log('New device:', event.data.name);
+});
+
+bluetooth.onEvent(BluetoothEventType.DEVICE_CONNECTED, (event) => {
+  console.log('Connected to:', event.data.robotId);
+});
+
+bluetooth.onEvent(BluetoothEventType.MESSAGE_RECEIVED, (event) => {
+  console.log('Message from:', event.data.from);
+});
+
+// Subscribe to all events
+bluetooth.onEvent('*', (event) => {
+  console.log(`[${event.type}]`, event.data);
+});
+```
+
+### Statistics
+
+```typescript
+const stats = bluetooth.getStats();
+console.log(`Messages sent: ${stats.messagesSent}`);
+console.log(`Messages received: ${stats.messagesReceived}`);
+console.log(`Connections active: ${stats.connectionsActive}`);
+console.log(`Average latency: ${stats.avgLatency}ms`);
+console.log(`Errors: ${stats.errors}`);
+
+// Reset stats
+bluetooth.resetStats();
+```
+
 ## Custom Storage
 
 ```typescript
@@ -1103,6 +1295,19 @@ import type {
   InvoiceStats,
   CreateInvoiceOptions,
   PayInvoiceOptions,
+
+  // Bluetooth
+  BluetoothDevice,
+  BluetoothConfig,
+  BluetoothMessage,
+  BluetoothStats,
+  BluetoothServiceAd,
+  ConnectionRequest,
+  ConnectionResult,
+  ScanOptions,
+  ScanResult,
+  MeshNetwork,
+  MeshNode,
 } from 'robox-clearing';
 ```
 ## Examples
@@ -1119,6 +1324,9 @@ npm run example:analytics
 
 # Run invoices example
 npm run example:invoices
+
+# Run bluetooth example
+npm run example:bluetooth
 ```
 
 ## License

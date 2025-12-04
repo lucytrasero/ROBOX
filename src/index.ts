@@ -282,6 +282,46 @@ export type {
   RateLimitStorage,
 } from './ratelimit';
 
+// Bluetooth (new in v1.3.0)
+export {
+  BluetoothManager,
+  BluetoothDeviceState,
+  BluetoothMode,
+  BluetoothMessageType,
+  MessagePriority,
+  MeshNodeRole,
+  MeshFeature,
+  BluetoothEventType,
+  ProximityZone,
+  PROTOCOL_VERSION,
+  ServiceUUIDs,
+  CharacteristicUUIDs,
+} from './bluetooth';
+
+export type {
+  BluetoothDevice,
+  BluetoothConfig,
+  BluetoothStats,
+  BluetoothMessage,
+  BluetoothServiceAd,
+  ConnectionRequest,
+  ConnectionResult,
+  ScanOptions,
+  ScanResult,
+  SendOptions,
+  SendResult,
+  MeshNetwork,
+  MeshNode,
+  TransactionPayload,
+  CommandPayload,
+  HandshakePayload,
+  DataPayload,
+  ErrorPayload,
+  BluetoothEvent,
+  BluetoothEventHandler,
+  DistanceEstimate,
+} from './bluetooth';
+
 // HTTP API
 export {
   createRoboxRouter,

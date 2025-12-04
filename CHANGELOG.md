@@ -5,6 +5,70 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2025-11-30
+
+### Added
+
+#### Bluetooth Communication Module (NEW)
+- **Device Discovery & Connection**
+  - BLE (Bluetooth Low Energy) and Classic Bluetooth support
+  - Automatic device scanning with filters (RSSI, name, services)
+  - Connection management with configurable timeouts
+  - Auto-connect option for discovered robots
+  - Handshake protocol for secure pairing
+
+- **Robot-to-Robot Messaging**
+  - Multiple message types (DATA, COMMAND, TRANSACTION, SERVICE, MESH)
+  - Priority levels (LOW, NORMAL, HIGH, URGENT)
+  - Reliable delivery with acknowledgments
+  - Message timeout and retry configuration
+  - Broadcast to all connected devices
+
+- **Transaction Over Bluetooth**
+  - Request, confirm, and reject transactions
+  - Secure transaction negotiation protocol
+  - Transaction timeout handling
+  - Integration with RoboxLayer for actual transfers
+
+- **Service Advertisement**
+  - Advertise services to nearby robots
+  - Service discovery and query
+  - Price, availability, and type information
+  - Real-time service updates
+
+- **Proximity Detection**
+  - Distance estimation based on RSSI
+  - Proximity zones (IMMEDIATE, NEAR, FAR, UNKNOWN)
+  - Find devices in specific zones
+  - Accuracy indicators for distance estimates
+
+- **Mesh Networking**
+  - Create and join mesh networks
+  - Mesh node roles (NODE, RELAY, PROXY, FRIEND, LOW_POWER)
+  - Broadcast through mesh
+  - Mesh topology management
+
+- **Comprehensive Statistics**
+  - Messages sent/received counts
+  - Bytes transferred tracking
+  - Connection statistics (total, active)
+  - Average latency measurement
+  - Error tracking
+
+- **Event System**
+  - Events for all Bluetooth operations
+  - DEVICE_DISCOVERED, DEVICE_CONNECTED, DEVICE_DISCONNECTED
+  - MESSAGE_RECEIVED, MESSAGE_SENT
+  - MESH_JOINED, MESH_LEFT
+  - SCAN_STARTED, SCAN_COMPLETED
+  - ERROR events
+  - Wildcard subscription support
+
+- **Optional Dependencies**
+  - @abandonware/noble for BLE
+  - bleno for BLE peripheral mode
+  - bluetooth-serial-port for Classic Bluetooth
+
 ## [1.2.0] - 2025-11-28
 
 ### Added
